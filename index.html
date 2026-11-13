@@ -173,8 +173,13 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
             <label for="inName">ชื่อกอง</label><input type="text" id="inName" placeholder="เช่น เสา 9 ม. ลานหลัง" maxlength="40">
             <label for="inPer">ต้นต่อชั้น</label><input type="number" id="inPer" min="1" max="20" step="1" value="6">
           </div>
+          <div class="row-actions">
+            <label class="filebtn" id="photoBtn">ถ่ายรูปหรือเลือกรูปเลขเสา<input type="file" id="inPhoto" accept="image/*"></label>
+            <button type="button" class="small" id="btnClear">ล้างเลข</button>
+          </div>
+          <p class="note">อ่านเลขจากรูปด้วย Gemini ถ่ายตรง ๆ ให้เห็นหัวเสาเต็ม ถ้ากองยาวให้ถ่ายไล่จากซ้ายไปขวา และให้แต่ละรูปซ้อนรูปก่อนหน้าหนึ่งถึงสองคอลัมน์ ระบบจะต่อให้เอง</p>
           <label for="inNums">เลขเสา</label>
-          <textarea id="inNums" placeholder="พิมพ์หรือวางเลขเสา คั่นด้วยเว้นวรรค&#10;ถ้าพิมพ์หลายบรรทัด แต่ละบรรทัดคือ 1 ชั้น (บรรทัดบนสุด = ชั้นบนสุด)"></textarea>
+          <textarea id="inNums" placeholder="พิมพ์หรือวางเลขเสา คั่นด้วยเว้นวรรค&#10;ถ้าพิมพ์หลายบรรทัด แต่ละบรรทัดคือ 1 ชั้น (บรรทัดบนสุด = ชั้นบนสุด)&#10;ใช้ - แทนตำแหน่งที่ไม่มีเสา"></textarea>
           <div class="inline">
             <span>หรือเติมเลขเรียง</span>
             <input type="number" id="inCount" min="1" max="200" step="1" value="12" aria-label="จำนวนต้น">
@@ -484,6 +489,7 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
       }
       run.rows.forEach(function(row, layer){
         row.forEach(function(label, col){
+          if (!label) return;                    // empty position in this layer
           var p = { label: label, run: run, col: col, layer: layer, alpha: 1, ty: 0, mats: [], gone: run.gone.has(label) };
           if (three) {
             var body = new THREE.MeshStandardMaterial({ color: COL_NORMAL, roughness: 0.92, flatShading: true });
@@ -877,17 +883,57 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
   });
 
   function setStatus(text, err){ statusEl.textContent = text || ""; statusEl.classList.toggle("err", !!err); }
+  /*GRID-START*/
   // Several lines: each line is a layer, top line = top layer. One line: wrap by poles per layer.
+  // "-" keeps a position empty so the layers stay lined up.
   function parseRows(text, per){
     var lines = text.split(/\r?\n/).map(function(l){ return l.split(/[\s,;|]+/).filter(Boolean); }).filter(function(l){ return l.length; });
-    if (!lines.length) return { rows: [], dup: 0 };
+    if (!lines.length) return { rows: [], dup: 0, n: 0, unsure: 0 };
     var rows = lines.length > 1 ? lines.reverse() : chunk(lines[0], per);
-    var seen = new Set(), dup = 0;
+    var seen = new Set(), dup = 0, n = 0, unsure = 0;
     rows = rows.map(function(r){
-      return r.map(function(v){ return v.slice(0, 16); }).filter(function(v){ if (seen.has(v)) { dup++; return false; } seen.add(v); return true; });
+      r = r.map(function(v){
+        if (/^-+$/.test(v)) return "";
+        if (v.indexOf("?") >= 0) { unsure++; return v; }
+        v = v.slice(0, 16);
+        if (seen.has(v)) { dup++; return ""; }
+        seen.add(v); n++; return v;
+      });
+      while (r.length && !r[r.length - 1]) r.pop();
+      return r;
     }).filter(function(r){ return r.length; });
-    return { rows: rows, dup: dup };
+    return { rows: rows, dup: dup, n: n, unsure: unsure };
   }
+  // text in the box -> rectangular grid, top layer first, "-" for empty positions
+  function toGrid(text){
+    var g = text.split(/\r?\n/).map(function(l){ return l.split(/[\s,;|]+/).filter(Boolean); }).filter(function(l){ return l.length; });
+    var w = g.reduce(function(m, r){ return Math.max(m, r.length); }, 0);
+    return g.map(function(r){ r = r.slice(); while (r.length < w) r.push("-"); return r; });
+  }
+  // put photo B to the right of what is already there (A). Both stand on the ground, so line them up from the bottom.
+  // Columns that both photos show (same numbers at A's right edge and B's left edge) are kept once.
+  function joinGrids(A, B){
+    if (!A.length) return { grid: B, overlap: 0 };
+    var wa = A[0].length, wb = B[0].length, h = Math.max(A.length, B.length);
+    function pad(G, w){ var out = G.slice(); while (out.length < h) out.unshift(new Array(w).fill("-")); return out; }
+    A = pad(A, wa); B = pad(B, wb);
+    function real(v){ return v !== "-" && v.indexOf("?") < 0; }
+    var overlap = 0;
+    for (var k = Math.min(wa, wb); k >= 1 && !overlap; k--) {
+      var same = 0, diff = 0;
+      for (var r = 0; r < h; r++) for (var c = 0; c < k; c++) {
+        var a = A[r][wa - k + c], b = B[r][c];
+        if (real(a) && real(b)) { if (a === b) same++; else diff++; }
+      }
+      if (same >= 2 && diff <= Math.floor(same / 6)) overlap = k;   // a stray misread digit should not block the match
+    }
+    var grid = A.map(function(row, r){
+      for (var c = 0; c < overlap; c++) if (!real(row[wa - overlap + c]) && real(B[r][c])) row[wa - overlap + c] = B[r][c];
+      return row.concat(B[r].slice(overlap));
+    });
+    return { grid: grid, overlap: overlap };
+  }
+  /*GRID-END*/
   $("btnFill").addEventListener("click", function(){
     var n = Math.round(clamp($("inCount").value, 1, 200, 12)), s = Math.round(clamp($("inStart").value, 0, 999999, 1));
     $("inNums").value = seq(n, s).join(" ");
@@ -896,8 +942,9 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
   $("btnAdd").addEventListener("click", function(){
     var per = Math.round(clamp($("inPer").value, 1, 20, 6));
     var parsed = parseRows($("inNums").value, per);
-    var n = parsed.rows.reduce(function(a, r){ return a + r.length; }, 0);
+    var n = parsed.n;
     if (!$("inAdmin").value) { setStatus("ใส่รหัสผู้ดูแลก่อนสร้างกอง", true); return; }
+    if (parsed.unsure) { setStatus("ยังมีเครื่องหมาย ? อยู่ " + parsed.unsure + " ตำแหน่ง แก้เป็นเลขเสาจริงก่อนสร้างกอง", true); return; }
     if (!n) { setStatus("ยังไม่มีเลขเสา พิมพ์เลข หรือเติมเลขเรียงก่อน", true); return; }
     if (n > 300) { setStatus("กองหนึ่งใส่ได้ไม่เกิน 300 ต้น ตอนนี้มี " + n + " ต้น แบ่งเป็นหลายกองได้", true); return; }
     if (parsed.rows.some(function(r){ return r.length > 30; })) { setStatus("ชั้นหนึ่งมีเกิน 30 ต้น ลองขึ้นบรรทัดใหม่เพื่อแบ่งชั้น", true); return; }
@@ -909,6 +956,46 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
       setStatus("สร้างกอง " + name + " แล้ว " + n + " ต้น" + (parsed.dup ? " (ตัดเลขซ้ำออก " + parsed.dup + " รายการ)" : ""));
     }, function(e){ setStatus(e.message, true); });
   });
+  /* ---------- read pole numbers from a photo (Gemini, through the sheet script) ---------- */
+  function shrink(file){
+    function b64(blob){ return new Promise(function(res, rej){ var fr = new FileReader(); fr.onload = function(){ res({ mime: blob.type || "image/jpeg", data: String(fr.result).split(",")[1] }); }; fr.onerror = rej; fr.readAsDataURL(blob); }); }
+    if (!window.createImageBitmap) return b64(file);
+    return createImageBitmap(file).then(function(bmp){
+      var s = Math.min(1, 2200 / Math.max(bmp.width, bmp.height));
+      var c = document.createElement("canvas");
+      c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
+      c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+      return new Promise(function(res){ c.toBlob(function(b){ res(b || file); }, "image/jpeg", 0.88); });
+    }, function(){ return file; }).then(b64);
+  }
+  var reading = false;
+  $("inPhoto").addEventListener("change", function(){
+    var file = this.files && this.files[0];
+    this.value = "";
+    if (!file || reading) return;
+    if (!API) { setStatus("โหมดทดลองอ่านรูปไม่ได้ ต้องเชื่อมกับ Google Sheet ก่อน", true); return; }
+    var code = $("inAdmin").value;
+    if (!code) { setStatus("ใส่รหัสผู้ดูแลก่อนอ่านรูป", true); return; }
+    reading = true; $("btnAdd").disabled = true;
+    setStatus("กำลังอ่านเลขเสาจากรูป ใช้เวลาประมาณครึ่งนาที");
+    shrink(file).then(function(img){
+      return call({ action: "readPhoto", admin: code, mime: img.mime, data: img.data });
+    }).then(function(res){
+      if (!res || !res.ok) throw new Error(res && res.error || "อ่านรูปไม่สำเร็จ");
+      var B = toGrid(res.photo.rows.map(function(r){ return r.join(" "); }).join("\n"));
+      var had = $("inNums").value.trim() !== "";
+      var j = joinGrids(toGrid($("inNums").value), B);
+      $("inNums").value = j.grid.map(function(r){ return r.join(" "); }).join("\n");
+      var p = parseRows($("inNums").value, 6);
+      setStatus((had ? "ต่อรูปนี้ทางขวาแล้ว" + (j.overlap ? " (ซ้อนกัน " + j.overlap + " คอลัมน์)" : " (ไม่พบคอลัมน์ที่ซ้อนกัน จึงต่อท้ายทั้งรูป)") + " " : "") +
+        "ตอนนี้มี " + p.n + " ต้น " + j.grid.length + " ชั้น" + (p.unsure ? " มี ? ที่อ่านไม่ออก " + p.unsure + " ตำแหน่ง" : "") +
+        (p.dup ? " มีเลขซ้ำ " + p.dup + " ตำแหน่ง" : "") + " ตรวจเลขกับของจริงก่อนกดสร้างกองเสา", !!(p.unsure || p.dup));
+    }).catch(function(e){
+      setStatus(e && e.message && e.message !== "Failed to fetch" ? e.message : "ส่งรูปไปอ่านไม่ได้ ตรวจอินเทอร์เน็ตแล้วลองใหม่", true);
+    }).then(function(){ reading = false; $("btnAdd").disabled = false; });
+  });
+  $("btnClear").addEventListener("click", function(){ $("inNums").value = ""; setStatus(""); });
+
   $("inSettle").checked = settle;
   $("inSettle").addEventListener("change", function(){ settle = this.checked; lsSet("pole-settle", settle ? "1" : "0"); layout(false); });
 
