@@ -40,14 +40,15 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-siz
 .hint{position:absolute;left:16px;bottom:14px;right:16px;font-size:13px;color:var(--ink);opacity:.75;pointer-events:none}
 .tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--panel);font-family:var(--font-display);font-weight:600;
   padding:4px 10px;border-radius:6px;font-size:14px;transform:translate(-50%,-140%);white-space:nowrap;display:none}
-.toast{position:absolute;top:52px;left:50%;transform:translateX(-50%);max-width:calc(100% - 32px);background:var(--ink);color:var(--panel);
+.toast{position:fixed;bottom:calc(84px + env(safe-area-inset-bottom));left:50%;z-index:20;transform:translateX(-50%);max-width:calc(100% - 32px);background:var(--ink);color:var(--panel);
   padding:8px 14px;border-radius:8px;font-size:14px;display:none;text-align:center;z-index:3}
 .mode{position:absolute;top:14px;left:16px;right:16px;display:none;pointer-events:none}
 .mode span{display:inline-block;background:var(--accent);color:var(--accent-ink);font-weight:600;padding:5px 12px;border-radius:8px;font-size:14px;max-width:100%}
 .msg{position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:24px;text-align:center;color:var(--muted)}
 .panel{background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
 .head{padding:14px 18px 0;display:flex;flex-direction:column;gap:10px}
-.title{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.title{display:flex;align-items:center;gap:10px}
+.title .conn{flex:1}
 h1{font-family:var(--font-display);font-size:20px;font-weight:700;margin:0;letter-spacing:.01em}
 .conn{font-size:12.5px;color:var(--muted);text-align:right}
 .conn.warn{color:var(--accent);font-weight:600}
@@ -112,9 +113,88 @@ textarea{min-height:96px;resize:vertical;font-family:var(--font-display);font-va
 .entry time{font-size:13px;color:var(--muted)}
 h3{font-size:14px;font-weight:600;margin:0}
 hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
+/* summary tab: the panel takes the whole window */
+.app.wide{grid-template-columns:minmax(0,1fr);grid-template-rows:1fr}
+.panel,.col>*{min-width:0}
+.app.wide .stage{display:none}
+.app.wide .panel{border:0}
+.app.wide .body,.app.wide .head{max-width:1200px;width:100%;margin:0 auto}
+.dash-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px 12px;align-items:end;font-size:13px}
+.dash-filters label{display:flex;flex-direction:column;gap:3px;color:var(--muted)}
+.dash-filters input,.dash-filters select{font-size:14px}
+input[type=date]{font:inherit;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);min-width:0}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px}
+.tile{border:1px solid var(--line);border-radius:9px;padding:10px 12px}
+.tile b{display:block;font-family:var(--font-display);font-size:28px;line-height:1.1;font-variant-numeric:tabular-nums}
+.tile span{font-size:12.5px;color:var(--muted)}
+.tile.main{border-color:var(--accent)}
+.tile.main b{color:var(--accent)}
+.types{display:flex;flex-direction:column;gap:6px}
+.trow{display:grid;grid-template-columns:minmax(0,220px) minmax(60px,1fr) auto;gap:10px;align-items:center;font-size:14px}
+.trow .bar{height:10px;border-radius:5px;background:var(--line);overflow:hidden}
+.trow .bar i{display:block;height:100%;background:var(--accent);border-radius:5px}
+.trow b{font-family:var(--font-display);font-variant-numeric:tabular-nums;min-width:3ch;text-align:right}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:9px}
+table.dash{border-collapse:collapse;width:100%;font-size:13.5px;min-width:820px}
+table.dash th,table.dash td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+table.dash th{background:var(--bg);font-weight:600;position:sticky;top:0;white-space:nowrap;cursor:pointer;user-select:none}
+table.dash th[aria-sort]::after{content:" ▾";color:var(--accent)}
+table.dash th[aria-sort="ascending"]::after{content:" ▴"}
+table.dash td.num{text-align:right;font-family:var(--font-display);font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+table.dash td.wbs{font-family:var(--font-display);font-weight:600;white-space:nowrap}
+table.dash td.labels{font-family:var(--font-display);font-variant-numeric:tabular-nums;max-width:320px}
+table.dash td .sub{display:block;color:var(--muted);font-size:12.5px}
+table.dash tr:last-child td{border-bottom:0}
+table.dash tfoot td{font-weight:700;background:var(--bg)}
+/* pole picker laid out like the face of the stack: top layer first */
+.pgrid-wrap{overflow-x:auto;margin:0 -4px;padding:2px 4px 6px;-webkit-overflow-scrolling:touch}
+.pgrid{display:grid;gap:5px;align-items:center}
+.pgl{font-size:11px;color:var(--muted);white-space:nowrap;padding-right:2px;position:sticky;left:-4px;background:var(--accent-soft);align-self:stretch;display:flex;align-items:center}
+.pg{min-height:46px;padding:4px 2px;font-family:var(--font-display);font-weight:700;font-size:15px;font-variant-numeric:tabular-nums;border-radius:8px;background:var(--panel);
+  border:1.5px solid var(--line);touch-action:manipulation;-webkit-tap-highlight-color:transparent;overflow-wrap:anywhere;line-height:1.1}
+.pg[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.pg:hover{color:inherit}
+.pg[aria-pressed="true"]:hover{color:var(--accent-ink)}
+.pgx{min-height:46px;border:1.5px dashed var(--line);border-radius:8px;opacity:.5}
+.whoami{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px}
+.whoami b{font-weight:600}
+details.edit{border:0;padding:0}
+details.edit summary{font-weight:500;font-size:13.5px;color:var(--accent);padding:4px 0}
+details.edit .fields{margin-top:6px}
+/* the save button stays on screen while the list scrolls */
+.dock{position:sticky;bottom:-18px;margin:4px -12px -12px;padding:10px 12px calc(12px + env(safe-area-inset-bottom));background:var(--panel);
+  border-top:1px solid var(--line);border-radius:0 0 10px 10px;display:flex;flex-direction:column;gap:8px;z-index:2}
+.dock .row-actions{flex-wrap:nowrap}
+.dock .primary{flex:1;min-height:48px;font-size:16px}
+.dock .sel-list{font-size:13.5px;color:var(--muted);font-weight:500}
+.dock .sel-list b{color:var(--ink)}
+.dock .status:empty{display:none}
+.toggle3d{font-size:12.5px;padding:4px 10px}
+/* 3D hidden by the user */
+.app.no3d{grid-template-columns:minmax(0,1fr);grid-template-rows:1fr}
+.app.no3d .stage{display:none}
+.app.no3d .panel{border:0}
+/* touch screens: 16px inputs stop iPhone from zooming in, and every control gets a finger-sized target */
+@media (pointer:coarse){
+  input[type=text],input[type=password],input[type=number],input[type=date],select,textarea{font-size:16px}
+  button,.filebtn{min-height:44px}
+  button.small{min-height:38px}
+  .chip{min-height:44px}
+  .tabs button{min-height:46px}
+}
 [hidden]{display:none !important}
 @media (max-width:760px){
-  .app{grid-template-columns:1fr;grid-template-rows:40% 60%}
+  .app{grid-template-columns:minmax(0,1fr);grid-template-rows:34% 66%}
+  .app.no3d,.app.wide{grid-template-rows:1fr}
+  .stats{display:flex;gap:6px}
+  .stat{display:flex;align-items:baseline;gap:5px;padding:4px 9px;flex:1;min-width:0}
+  .stat b{font-size:17px}
+  .stat span{font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hint{font-size:12px;bottom:8px}
+  .mode{top:8px}
+  .dock{bottom:-16px}
+  .conn{font-size:11.5px;line-height:1.3}
+  .app.wide{grid-template-rows:1fr}
   .panel{border-left:0;border-top:1px solid var(--line)}
   .head{padding:10px 16px 0;gap:8px}
   .body{padding:12px 16px 16px}
@@ -134,15 +214,16 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
   </div>
   <aside class="panel">
     <div class="head">
-      <div class="title"><h1>กองเสา 3D</h1><div class="conn" id="conn"></div></div>
+      <div class="title"><h1>กองเสา 3D</h1><div class="conn" id="conn"></div><button type="button" class="small toggle3d" id="btn3d">ซ่อนภาพ 3D</button></div>
       <div class="stats">
-        <div class="stat main"><b id="sLeft">0</b><span>คงเหลือในลาน (ต้น)</span></div>
+        <div class="stat main"><b id="sLeft">0</b><span>คงเหลือ (ต้น)</span></div>
         <div class="stat"><b id="sOut">0</b><span>เบิกแล้ว</span></div>
         <div class="stat"><b id="sAll">0</b><span>ทั้งหมด</span></div>
       </div>
       <div class="tabs" role="tablist">
         <button type="button" role="tab" id="tab-w" aria-controls="pan-w" aria-selected="true">เบิกเสา</button>
         <button type="button" role="tab" id="tab-h" aria-controls="pan-h" aria-selected="false">ประวัติ</button>
+        <button type="button" role="tab" id="tab-d" aria-controls="pan-d" aria-selected="false">สรุป</button>
         <button type="button" role="tab" id="tab-a" aria-controls="pan-a" aria-selected="false">ผู้ดูแล</button>
       </div>
     </div>
@@ -151,6 +232,50 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
 
       <div class="col" id="pan-h" role="tabpanel" aria-labelledby="tab-h" hidden>
         <div id="history" class="col"></div>
+      </div>
+
+      <div class="col" id="pan-d" role="tabpanel" aria-labelledby="tab-d" hidden>
+        <div class="dash-filters">
+          <label for="dFrom">ตั้งแต่วันที่<input type="date" id="dFrom"></label>
+          <label for="dTo">ถึงวันที่<input type="date" id="dTo"></label>
+          <label for="dType">ชนิดเสา<select id="dType"><option value="">ทุกชนิด</option></select></label>
+          <label for="dQ">ค้นหา<input type="text" id="dQ" placeholder="WBS เลขเสา ผู้รับเหมา ใบจอง ผู้เบิก"></label>
+        </div>
+        <div class="row-actions">
+          <button type="button" class="small" id="dAll">ทั้งหมด</button>
+          <button type="button" class="small" id="dMonth">เดือนนี้</button>
+          <button type="button" class="small" id="d7">7 วันล่าสุด</button>
+          <button type="button" class="small" id="dToday">วันนี้</button>
+          <span style="flex:1"></span>
+          <button type="button" class="small" id="dXlsx">ดาวน์โหลด Excel</button>
+          <button type="button" class="small" id="dReload">รีเฟรช</button>
+        </div>
+        <p class="status" id="dStatus" role="status"></p>
+        <div class="tiles">
+          <div class="tile main"><b id="kPoles">0</b><span>เบิกแล้ว (ต้น)</span></div>
+          <div class="tile"><b id="kWbs">0</b><span>WBS</span></div>
+          <div class="tile"><b id="kTimes">0</b><span>ครั้งที่เบิก</span></div>
+          <div class="tile"><b id="kYard">0</b><span>คงเหลือในลานตอนนี้ (ต้น)</span></div>
+        </div>
+        <h3>ตามชนิดเสา</h3>
+        <div class="types" id="dTypes"></div>
+        <h3>ตาม WBS</h3>
+        <div class="tablewrap">
+          <table class="dash" id="dTable">
+            <thead><tr>
+              <th data-k="last" aria-sort="descending">เบิกล่าสุด</th>
+              <th data-k="wbs">WBS / ชื่องาน</th>
+              <th data-k="desc">ชนิดเสา</th>
+              <th data-k="n">ต้น</th>
+              <th data-k="labels">เลขเสา</th>
+              <th data-k="contractor">ผู้รับเหมา / ใบจอง</th>
+              <th data-k="left">ยังเบิกได้</th>
+            </tr></thead>
+            <tbody></tbody>
+            <tfoot></tfoot>
+          </table>
+        </div>
+        <p class="note">นับจากประวัติการเบิกในแอปทั้งหมด รายการที่ยกเลิกแล้วไม่ถูกนับ ช่อง ยังเบิกได้ มาจากไฟล์ zcn52n ล่าสุดหักยอดที่เบิกในแอป</p>
       </div>
 
       <div class="col" id="pan-a" role="tabpanel" aria-labelledby="tab-a" hidden>
@@ -359,6 +484,7 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
         db.piles.splice(Math.min(at, db.piles.length), 0, merged);
         db.log.forEach(function(e){ if (names.indexOf(e.pile) >= 0) e.pile = name; });
       } else if (a === "checkAdmin") admin();
+      else if (a === "log") return { ok: true, state: view(), log: db.log };
       return { ok: true, state: view() };
     } catch (err) { return { ok: false, error: String(err.message || err) }; }
   }
@@ -602,6 +728,7 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
           else level = Math.min(p.layer, count[p.col] || 0);
         }
         if (!p.gone) used[level] = true;
+        p.level = level;
         p.ty = level * run.pitchY + BAT + run.S / 2 + (p.gone ? 0.6 : 0);
         if (p.group && (snap || reduceMotion)) {
           p.alpha = p.gone ? 0 : 1;
@@ -641,6 +768,7 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
       else if (run) wz.sel.forEach(function(l){ if (run.gone.has(l)) wz.sel.delete(l); });
     }
     stats(); paint(); fillTypes(); renderHistory(); renderAdmin();
+    if (!$("pan-d").hidden) { var last = state.log.length ? state.log[state.log.length - 1].id + state.log.length : ""; if (last !== dashSeen) loadDash(); else renderDash(); }
     if (!$("mergeBox").hidden) { mergeSel.forEach(function(n){ if (!runOf(n)) mergeSel.delete(n); }); renderMerge(); paintMerge(); }
     // do not redraw the form under someone's fingers; just tick off what changed
     if (wz && wz.pile && !rebuilt && !justSaved) { syncChips(); updateCount(); } else renderW();
@@ -700,6 +828,11 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
     return chip;
   }
   function syncChips(){
+    var tiles = document.querySelectorAll(".pg");
+    for (var t = 0; t < tiles.length; t++) {
+      var q = tiles[t]._pole; if (!q) continue;
+      tiles[t].setAttribute("aria-pressed", wz && wz.pile === q.run.name && wz.sel.has(q.label) ? "true" : "false");
+    }
     var chips = document.querySelectorAll(".chip");
     for (var i = 0; i < chips.length; i++) {
       var c = chips[i], p = c._pole; if (!p) continue;
@@ -731,7 +864,12 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
     var line = lineOf(wz.key), n = wz.sel.size;
     var c = $("actCount"), s = $("actSel"), b = $("actOk");
     if (c) { c.textContent = ""; if (line) { c.appendChild(document.createTextNode("เลือกแล้ว ")); c.appendChild(el("b", null, n)); c.appendChild(document.createTextNode(" / " + line.left + " ต้น")); } }
-    if (s) s.textContent = n ? "เลขเสา " + Array.from(wz.sel).join(", ") : "";
+    if (s) {
+      s.textContent = "";
+      if (!line) s.textContent = "เลือก WBS ก่อน";
+      else if (!n) s.textContent = "แตะเลขเสาที่จะเบิก (เบิกได้อีก " + line.left + " ต้น)";
+      else { s.appendChild(document.createTextNode("เลือก " + n + "/" + line.left + " ต้น: ")); s.appendChild(el("b", null, Array.from(wz.sel).join(", "))); }
+    }
     if (b) { b.disabled = !n || busy; b.textContent = n ? "บันทึกการเบิก " + n + " ต้น" : "บันทึกการเบิก"; }
   }
 
@@ -802,10 +940,12 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
     }
     if (line) {
       var dl = el("dl", "kv");
-      [["ชื่องาน", line.job || "-"], ["โครงข่าย", line.net || "-"], ["เบิกได้อีก", line.left + " ต้น"]].forEach(function(kv){
+      [["ชื่องาน", line.job || "-"], ["ใบจอง", wz.booking || "-"], ["ผู้รับเหมา", wz.contractor || "-"], ["เบิกได้อีก", line.left + " ต้น"]].forEach(function(kv){
         dl.appendChild(el("dt", null, kv[0])); dl.appendChild(el("dd", null, kv[1]));
       });
       card.appendChild(dl);
+      var ed = el("details", "edit"), es = el("summary", null, "แก้เลขใบจอง หรือผู้รับเหมา");   // rarely needed: folded away
+      ed.appendChild(es);
       var f = el("div", "fields");
       [["actBooking", "เลขที่ใบจอง", "booking", 40], ["actContractor", "ผู้รับเหมา", "contractor", 120]].forEach(function(d){
         var lb = el("label", null, d[1]); lb.htmlFor = d[0];
@@ -813,37 +953,73 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
         inp.addEventListener("input", function(){ wz[d[2]] = inp.value; });
         f.appendChild(lb); f.appendChild(inp);
       });
-      card.appendChild(f);
+      ed.appendChild(f); card.appendChild(ed);
 
       var h3 = el("div", "card-head");                                                             // step 3: poles
       h3.appendChild(el("h2", "step", "3. เลือกเสา"));
       var cnt2 = el("span", "count"); cnt2.id = "actCount"; h3.appendChild(cnt2);
       card.appendChild(h3);
-      card.appendChild(el("p", "note", "ติ๊กเลขเสา หรือแตะเสาในภาพ 3D"));
-      var list = el("div", "list");
-      run.poles.forEach(function(p){ if (!p.gone) list.appendChild(makeChip(p)); });
-      card.appendChild(list);
-      var s = el("div", "sel-list"); s.id = "actSel"; card.appendChild(s);
+      card.appendChild(el("p", "note", "เรียงเหมือนหน้ากองจริง ชั้นบนสุดอยู่บน แตะเลขเสา หรือแตะเสาในภาพ 3D"));
+      card.appendChild(poleGrid(run));
 
-      var fu = el("div", "fields"), lu = el("label", null, "ชื่อผู้เบิก"); lu.htmlFor = "actUser";
-      var iu = document.createElement("input"); iu.type = "text"; iu.id = "actUser"; iu.maxLength = 60; iu.value = lsGet("pole-user");
+      var known = lsGet("pole-user"), who = el("div", "whoami");                                 // who is withdrawing
+      var lu = el("label", null, "ชื่อผู้เบิก"); lu.htmlFor = "actUser";
+      var iu = document.createElement("input"); iu.type = "text"; iu.id = "actUser"; iu.maxLength = 60; iu.value = known;
       iu.placeholder = "พิมพ์ครั้งเดียว เครื่องนี้จะจำไว้"; iu.autocomplete = "name";
-      fu.appendChild(lu); fu.appendChild(iu); card.appendChild(fu);
+      if (known) {
+        who.appendChild(el("span", null, "ผู้เบิก")); who.appendChild(el("b", null, known));
+        var chgU = el("button", "small", "เปลี่ยน"); chgU.type = "button";
+        chgU.addEventListener("click", function(){ who.hidden = true; fu.hidden = false; iu.focus(); iu.select(); });
+        who.appendChild(chgU); card.appendChild(who);
+      }
+      var fu = el("div", "fields"); fu.appendChild(lu); fu.appendChild(iu); fu.hidden = !!known; card.appendChild(fu);
     }
-    var st = el("p", "status"); st.id = "actStatus"; st.setAttribute("role", "status"); card.appendChild(st);
+    var dock = el("div", "dock");
+    var s = el("div", "sel-list"); s.id = "actSel"; dock.appendChild(s);
+    var st = el("p", "status"); st.id = "actStatus"; st.setAttribute("role", "status"); dock.appendChild(st);
     var acts = el("div", "row-actions");
     if (line) { var ok = el("button", "primary", "บันทึกการเบิก"); ok.type = "button"; ok.id = "actOk"; ok.addEventListener("click", saveW); acts.appendChild(ok); }
     var cancel = el("button", null, "ยกเลิก"); cancel.type = "button"; cancel.addEventListener("click", cancelW);
-    acts.appendChild(cancel); card.appendChild(acts);
+    acts.appendChild(cancel); dock.appendChild(acts); card.appendChild(dock);
     box.appendChild(card);
     syncChips(); updateCount();
   }
+  // poles still in the pile as they sit now (after settling), top layer first, same columns as the pile
+  function poleGrid(run){
+    var levels = {};
+    run.poles.forEach(function(p){ if (!p.gone) (levels[p.level] = levels[p.level] || [])[p.col] = p; });
+    var keys = Object.keys(levels).map(Number).sort(function(a, b){ return b - a; });
+    var wrap = el("div", "pgrid-wrap");
+    if (!keys.length) { wrap.appendChild(el("p", "empty", "กองนี้ไม่มีเสาเหลือ")); return wrap; }
+    var grid = el("div", "pgrid");
+    grid.style.gridTemplateColumns = "auto repeat(" + run.cols + ", minmax(44px, 1fr))";
+    keys.forEach(function(k){
+      grid.appendChild(el("span", "pgl", "ชั้น " + (k + 1)));
+      for (var c = 0; c < run.cols; c++) {
+        var p = levels[k][c];
+        if (!p) { grid.appendChild(el("span", "pgx")); continue; }
+        var b = el("button", "pg", p.label); b.type = "button"; b._pole = p;
+        b.setAttribute("aria-pressed", "false"); b.setAttribute("aria-label", "เสาเลข " + p.label + " ชั้น " + (k + 1));
+        (function(p){ b.addEventListener("click", function(){ clickPole(p); }); })(p);
+        grid.appendChild(b);
+      }
+    });
+    wrap.appendChild(grid);
+    return wrap;
+  }
+  function set3d(show){
+    document.querySelector(".app").classList.toggle("no3d", !show);
+    $("btn3d").textContent = show ? "ซ่อนภาพ 3D" : "แสดงภาพ 3D";
+    lsSet("pole-3d", show ? "1" : "0");
+    if (show) setTimeout(function(){ resize(); }, 0);
+  }
+  $("btn3d").addEventListener("click", function(){ set3d(document.querySelector(".app").classList.contains("no3d")); });
   function cancelW(){ wz = null; frame(null); paint(); renderW(); }
   function saveW(){
     if (!wz || busy) return;
     var st = $("actStatus"), user = $("actUser").value.trim(), n = wz.sel.size, line = lineOf(wz.key);
     function err(t){ st.textContent = t; st.classList.add("err"); }
-    if (!user) { err("ใส่ชื่อผู้เบิกก่อนบันทึก"); $("actUser").focus(); return; }
+    if (!user) { err("ใส่ชื่อผู้เบิกก่อนบันทึก"); $("actUser").parentNode.hidden = false; $("actUser").focus(); return; }
     if (!n || !line) return;
     lsSet("pole-user", user);
     st.classList.remove("err"); st.textContent = "กำลังบันทึก";
@@ -1198,13 +1374,166 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
     }, function(e){ err(e.message); $("btnMergeOk").disabled = false; });
   });
 
+  /* ---------- summary tab ---------- */
+  var dashLog = null, dashSeen = null, dashSort = { k: "last", dir: -1 }, dashBusy = false;
+  function ymd(d){ return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
+  function loadDash(){
+    if (dashBusy) return;
+    dashBusy = true; $("dStatus").textContent = "กำลังโหลดประวัติ"; $("dStatus").classList.remove("err");
+    dashSeen = state.log.length ? state.log[state.log.length - 1].id + state.log.length : "";
+    call({ action: "log" }).then(function(res){
+      dashBusy = false;
+      if (!res || !res.ok || !Array.isArray(res.log)) throw new Error(res && res.error || "โหลดประวัติไม่ได้");
+      dashLog = res.log; $("dStatus").textContent = ""; renderDash();
+    }).catch(function(e){
+      dashBusy = false;
+      $("dStatus").textContent = (e && e.message && e.message !== "Failed to fetch" ? e.message : "โหลดประวัติไม่ได้ ตรวจอินเทอร์เน็ตแล้วกดรีเฟรช");
+      $("dStatus").classList.add("err");
+    });
+  }
+  /*DASH-START*/
+  // entries -> one row per WBS line and pole type, after the date / type / text filters
+  function summarize(log, f, demand){
+    var from = f.from ? new Date(f.from + "T00:00:00").getTime() : -Infinity;
+    var to = f.to ? new Date(f.to + "T23:59:59.999").getTime() : Infinity;
+    var q = (f.q || "").trim().toLowerCase();
+    var left = {}; (demand || []).forEach(function(l){ left[l.key] = l.left; });
+    var groups = {}, rows = [], types = {}, times = 0;
+    log.forEach(function(e){
+      if (e.ts < from || e.ts > to) return;
+      if (f.mat && e.mat !== f.mat) return;
+      var hay = [e.wbs, e.job, e.contractor, e.booking, e.user, e.desc, e.mat].concat(e.labels).join(" ").toLowerCase();
+      if (q && hay.indexOf(q) < 0) return;
+      times++;
+      var k = e.wbs + "|" + e.mat, g = groups[k];
+      if (!g) {
+        g = groups[k] = { wbs: e.wbs, job: e.job, mat: e.mat, desc: String(e.desc || "").replace(/\s+/g, " ").trim(), n: 0, labels: [],
+                          contractors: [], bookings: [], last: 0, keys: [] };
+        rows.push(g);
+      }
+      g.n += e.labels.length;
+      g.labels = g.labels.concat(e.labels);
+      if (e.contractor && g.contractors.indexOf(e.contractor) < 0) g.contractors.push(e.contractor);
+      if (e.booking && g.bookings.indexOf(e.booking) < 0) g.bookings.push(e.booking);
+      if (e.key && g.keys.indexOf(e.key) < 0) g.keys.push(e.key);
+      if (e.ts > g.last) { g.last = e.ts; g.job = e.job || g.job; }
+      var t = types[e.mat] = types[e.mat] || { mat: e.mat, desc: g.desc, n: 0 };
+      t.n += e.labels.length;
+    });
+    rows.forEach(function(g){
+      var known = g.keys.filter(function(k){ return k in left; });
+      g.left = known.length ? known.reduce(function(s, k){ return s + left[k]; }, 0) : null;
+    });
+    var wbs = {}; rows.forEach(function(g){ wbs[g.wbs] = 1; });
+    return { rows: rows, types: Object.keys(types).map(function(k){ return types[k]; }).sort(function(a, b){ return b.n - a.n; }),
+             poles: rows.reduce(function(s, g){ return s + g.n; }, 0), wbs: Object.keys(wbs).length, times: times };
+  }
+  /*DASH-END*/
+  function dashFilter(){ return { from: $("dFrom").value, to: $("dTo").value, mat: $("dType").value, q: $("dQ").value }; }
+  function renderDash(){
+    if (!dashLog) return;
+    var sel = $("dType"), keep = sel.value, mats = {};
+    dashLog.forEach(function(e){ mats[e.mat] = e.desc; });
+    var sig = Object.keys(mats).sort().join(",");
+    if (sel._sig !== sig) {
+      sel._sig = sig; sel.textContent = "";
+      var o0 = el("option", null, "ทุกชนิด"); o0.value = ""; sel.appendChild(o0);
+      Object.keys(mats).sort().forEach(function(m){ var o = el("option", null, shortType(mats[m]) + " (" + m + ")"); o.value = m; sel.appendChild(o); });
+      sel.value = mats[keep] ? keep : "";
+    }
+    var s = summarize(dashLog, dashFilter(), state.demand);
+    $("kPoles").textContent = s.poles; $("kWbs").textContent = s.wbs; $("kTimes").textContent = s.times;
+    $("kYard").textContent = poles.filter(function(p){ return !p.gone; }).length;
+
+    var tb = $("dTypes"); tb.textContent = "";
+    var max = s.types.reduce(function(m, t){ return Math.max(m, t.n); }, 0);
+    if (!s.types.length) tb.appendChild(el("p", "empty", "ไม่มีการเบิกในช่วงที่เลือก"));
+    s.types.forEach(function(t){
+      var r = el("div", "trow"), bar = el("div", "bar"), fill = el("i");
+      fill.style.width = (max ? Math.max(2, t.n / max * 100) : 0) + "%"; bar.appendChild(fill);
+      r.appendChild(el("span", null, shortType(t.desc) + " · " + t.mat)); r.appendChild(bar); r.appendChild(el("b", null, t.n));
+      tb.appendChild(r);
+    });
+
+    var k = dashSort.k, dir = dashSort.dir;
+    s.rows.sort(function(a, b){
+      var x = a[k], y = b[k];
+      if (k === "labels") { x = a.labels.length; y = b.labels.length; }
+      if (k === "contractor") { x = a.contractors.join(","); y = b.contractors.join(","); }
+      if (x == null) x = -1; if (y == null) y = -1;
+      return (typeof x === "string" ? x.localeCompare(y, "th") : x - y) * dir;
+    });
+    var body = $("dTable").tBodies[0]; body.textContent = "";
+    if (!s.rows.length) { var tr0 = document.createElement("tr"), td0 = el("td", "empty", "ไม่มีรายการ"); td0.colSpan = 7; tr0.appendChild(td0); body.appendChild(tr0); }
+    s.rows.forEach(function(g){
+      var tr = document.createElement("tr");
+      function td(cls, main, sub){ var c = el("td", cls, main); if (sub) c.appendChild(el("span", "sub", sub)); tr.appendChild(c); }
+      td(null, stamp(g.last).slice(0, 10), stamp(g.last).slice(11));
+      td("wbs", g.wbs, g.job || "");
+      td(null, shortType(g.desc), g.mat);
+      td("num", g.n);
+      td("labels", g.labels.join(", "));
+      td(null, g.contractors.join(", ") || "-", g.bookings.join(", "));
+      td("num", g.left == null ? "-" : g.left);
+      body.appendChild(tr);
+    });
+    var ft = $("dTable").tFoot; ft.textContent = "";
+    if (s.rows.length) {
+      var fr = document.createElement("tr"), c1 = el("td", null, "รวม " + s.rows.length + " รายการ"); c1.colSpan = 3;
+      fr.appendChild(c1); fr.appendChild(el("td", "num", s.poles)); var c2 = el("td"); c2.colSpan = 3; fr.appendChild(c2);
+      ft.appendChild(fr);
+    }
+    document.querySelectorAll("#dTable th").forEach(function(th){
+      if (th.dataset.k === k) th.setAttribute("aria-sort", dir < 0 ? "descending" : "ascending"); else th.removeAttribute("aria-sort");
+    });
+    $("dXlsx").disabled = !s.rows.length;
+  }
+  document.querySelectorAll("#dTable th").forEach(function(th){
+    th.tabIndex = 0;
+    function go(){ var k = th.dataset.k; dashSort = { k: k, dir: dashSort.k === k ? -dashSort.dir : (k === "wbs" || k === "desc" || k === "contractor" ? 1 : -1) }; renderDash(); }
+    th.addEventListener("click", go);
+    th.addEventListener("keydown", function(ev){ if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(); } });
+  });
+  ["dFrom", "dTo", "dType"].forEach(function(id){ $(id).addEventListener("change", renderDash); });
+  $("dQ").addEventListener("input", renderDash);
+  function setRange(from, to){ $("dFrom").value = from; $("dTo").value = to; renderDash(); }
+  $("dAll").addEventListener("click", function(){ setRange("", ""); });
+  $("dToday").addEventListener("click", function(){ var d = ymd(new Date()); setRange(d, d); });
+  $("d7").addEventListener("click", function(){ var d = new Date(); var f = new Date(d.getTime() - 6 * 864e5); setRange(ymd(f), ymd(d)); });
+  $("dMonth").addEventListener("click", function(){ var d = new Date(); setRange(ymd(new Date(d.getFullYear(), d.getMonth(), 1)), ymd(d)); });
+  $("dReload").addEventListener("click", loadDash);
+  $("dXlsx").addEventListener("click", function(){
+    if (!dashLog || !window.XLSX) return;
+    var f = dashFilter(), s = summarize(dashLog, f, state.demand);
+    var a = [["เบิกล่าสุด", "องค์ประกอบ WBS", "ชื่องาน", "วัสดุ", "คำอธิบายของวัสดุ", "จำนวน (ต้น)", "เลขเสา", "ผู้รับเหมา", "เลขที่ใบจองพัสดุ", "ยังเบิกได้"]];
+    s.rows.forEach(function(g){ a.push([stamp(g.last), g.wbs, g.job, g.mat, g.desc, g.n, g.labels.join(", "), g.contractors.join(", "), g.bookings.join(", "), g.left == null ? "" : g.left]); });
+    var b = [["วันที่", "เวลา", "ผู้เบิก", "องค์ประกอบ WBS", "ชื่องาน", "ใบสั่ง/โครงข่าย", "วัสดุ", "คำอธิบายของวัสดุ", "เลขที่ใบจองพัสดุ", "ผู้รับเหมา", "กอง", "เลขเสา"]];
+    dashLog.forEach(function(e){
+      var one = summarize([e], f, []);
+      if (!one.times) return;
+      var t = stamp(e.ts);
+      e.labels.forEach(function(l){ b.push([t.slice(0, 10), t.slice(11), e.user, e.wbs, e.job, e.net, e.mat, e.desc, e.booking, e.contractor, e.pile, l]); });
+    });
+    var wb = XLSX.utils.book_new();
+    var s1 = XLSX.utils.aoa_to_sheet(a), s2 = XLSX.utils.aoa_to_sheet(b);
+    s1["!cols"] = [16, 24, 36, 15, 28, 11, 40, 20, 16, 11].map(function(w){ return { wch: w }; });
+    s2["!cols"] = [11, 7, 14, 24, 36, 13, 15, 28, 16, 20, 24, 9].map(function(w){ return { wch: w }; });
+    XLSX.utils.book_append_sheet(wb, s1, "สรุปตาม WBS");
+    XLSX.utils.book_append_sheet(wb, s2, "รายต้น");
+    var tag = (f.from || "เริ่มต้น") + "_ถึง_" + (f.to || ymd(new Date()));
+    try { XLSX.writeFile(wb, "สรุปเบิกเสา_" + tag + ".xlsx"); }
+    catch (err) { $("dStatus").textContent = "ดาวน์โหลดไม่ได้ในเบราว์เซอร์นี้"; $("dStatus").classList.add("err"); }
+  });
+
   /* ---------- tabs ---------- */
-  var TABS = ["w", "h", "a"];
+  var TABS = ["w", "h", "d", "a"];
   function showTab(id){
     TABS.forEach(function(t){
       $("tab-" + t).setAttribute("aria-selected", t === id ? "true" : "false");
       $("pan-" + t).hidden = t !== id;
     });
+    document.querySelector(".app").classList.toggle("wide", id === "d");
+    if (id === "d") loadDash(); else resize();
   }
   TABS.forEach(function(t){ $("tab-" + t).addEventListener("click", function(){ showTab(t); }); });
 
@@ -1267,8 +1596,11 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
   }
 
   /* ---------- start ---------- */
+  if (window.matchMedia && window.matchMedia("(pointer:coarse)").matches)
+    document.querySelector(".hint").textContent = "ลากนิ้วเพื่อหมุน · ถ่างนิ้วเพื่อซูม · แตะเสาเพื่อเลือก";
   three = initThree();
   if (!three) $("msg").style.display = "flex";
+  if (lsGet("pole-3d") === "0") set3d(false);
   setConn(); fillTypes(); renderW(); renderHistory(); renderAdmin();
   if (three) {
     three.box = { cx: 0, cz: 0, w: 0, d: 9, h: 0 };
