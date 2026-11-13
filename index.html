@@ -170,6 +170,9 @@ details.edit .fields{margin-top:6px}
 .dock .sel-list b{color:var(--ink)}
 .dock .status:empty{display:none}
 .toggle3d{font-size:12.5px;padding:4px 10px}
+.undo{display:flex;flex-direction:column;gap:8px;border-top:1px dashed var(--line);padding-top:10px}
+.undo-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px}
+.entry time,.card time{font-size:13px;color:var(--muted)}
 /* 3D hidden by the user */
 .app.no3d{grid-template-columns:minmax(0,1fr);grid-template-rows:1fr}
 .app.no3d .stage{display:none}
@@ -397,6 +400,9 @@ details.edit .fields{margin-top:6px}
   /* ---------- backend: Google Sheet through Apps Script, or a local trial copy ---------- */
   var API = (typeof API_URL === "string" && API_URL.trim()) || "";
   var LOCAL_KEY = "pole-pile-local-v1";
+  var UNDO_MS = 10 * 60000;                     // the person who withdrew can cancel poles themselves this long
+  function mineIds(){ try { return JSON.parse(lsGet("pole-mine") || "[]"); } catch (e) { return []; } }
+  function addMine(id){ var m = mineIds().filter(function(x){ return x !== id; }); m.push(id); lsSet("pole-mine", JSON.stringify(m.slice(-30))); }
 
   /*LOCAL-START*/
   function localDefault(){
@@ -433,7 +439,8 @@ details.edit .fields{margin-top:6px}
           if (pile.removed.indexOf(l) >= 0) fail("เสาเลข " + l + " ถูกเบิกไปแล้ว กดรีเฟรชแล้วเลือกใหม่");
         });
         pile.removed = pile.removed.concat(labels);
-        db.log.push({ id: Date.now().toString(36), ts: Date.now(), user: user, wbs: line.wbs, job: line.job, net: line.net, mat: line.mat, desc: line.desc,
+        var newId = Date.now().toString(36);
+        db.log.push({ id: newId, ts: Date.now(), user: user, wbs: line.wbs, job: line.job, net: line.net, mat: line.mat, desc: line.desc,
           booking: String(req.booking || "").trim() || line.booking, contractor: String(req.contractor || "").trim() || line.contractor,
           pile: pile.name, labels: labels, key: line.key, importId: db.importId });
       } else if (a === "undo") {
@@ -442,6 +449,17 @@ details.edit .fields{margin-top:6px}
         if (!e) fail("ไม่พบรายการนี้ อาจถูกยกเลิกไปแล้ว");
         db.piles.forEach(function(p){ if (p.name === e.pile) p.removed = p.removed.filter(function(l){ return e.labels.indexOf(l) < 0; }); });
         db.log.splice(db.log.indexOf(e), 1);
+      } else if (a === "undoPoles") {
+        var ent = db.log.filter(function(x){ return x.id === req.id; })[0], want = (req.labels || []).map(String);
+        if (!want.length) fail("เลือกเลขเสาที่จะยกเลิกก่อน");
+        if (!ent || !ent.labels.some(function(l){ return want.indexOf(l) >= 0; })) fail("ไม่พบเสาที่จะยกเลิก อาจถูกยกเลิกไปแล้ว");
+        if (String(req.admin || "") !== db.admin) {
+          if (String(req.user || "").trim() !== ent.user) fail("ยกเลิกเองได้เฉพาะรายการที่ตัวเองเบิก ให้ผู้ดูแลยกเลิกให้");
+          if (Date.now() - ent.ts > UNDO_MS) fail("เกิน 10 นาทีแล้ว ให้ผู้ดูแลยกเลิกให้");
+        }
+        db.piles.forEach(function(p){ if (p.name === ent.pile) p.removed = p.removed.filter(function(l){ return want.indexOf(l) < 0; }); });
+        ent.labels = ent.labels.filter(function(l){ return want.indexOf(l) < 0; });
+        if (!ent.labels.length) db.log.splice(db.log.indexOf(ent), 1);
       } else if (a === "upload") {
         admin();
         if (!(req.lines || []).length) fail("ไฟล์นี้ไม่มีรายการเสาที่มีคงเหลือ");
@@ -485,7 +503,7 @@ details.edit .fields{margin-top:6px}
         db.log.forEach(function(e){ if (names.indexOf(e.pile) >= 0) e.pile = name; });
       } else if (a === "checkAdmin") admin();
       else if (a === "log") return { ok: true, state: view(), log: db.log };
-      return { ok: true, state: view() };
+      return { ok: true, state: view(), id: newId };
     } catch (err) { return { ok: false, error: String(err.message || err) }; }
   }
   /*LOCAL-END*/
@@ -883,6 +901,15 @@ details.edit .fields{margin-top:6px}
       var go = el("button", "primary big", "เบิกเสา"); go.type = "button";
       go.addEventListener("click", function(){ if (!$("mergeBox").hidden) closeMerge(""); if (moving) { toast("กำลังย้ายกองอยู่ บันทึกหรือยกเลิกในแท็บ ผู้ดูแล ก่อน"); return; } wz = { pile: "", key: "", sel: new Set(), booking: "", contractor: "" }; renderW(); });
       box.appendChild(go);
+      state.log.filter(canSelfUndo).reverse().forEach(function(e){
+        var c = el("section", "card active"), hd = el("div", "card-head");
+        hd.appendChild(el("h2", null, "คุณเพิ่งเบิก " + e.labels.length + " ต้น"));
+        hd.appendChild(el("time", null, stamp(e.ts).slice(11)));
+        c.appendChild(hd);
+        c.appendChild(el("p", "note", e.wbs + " · " + shortType(e.desc) + " · กอง " + e.pile));
+        var ub = undoBox(e); if (ub) c.appendChild(ub);
+        box.appendChild(c);
+      });
       if (!state.demand.length) box.appendChild(el("p", "status err", "ยังไม่มีข้อมูล WBS ให้ผู้ดูแลอัปไฟล์ผลลัพธ์ zcn52n ในแท็บ ผู้ดูแล"));
       else box.appendChild(el("p", "note", "ข้อมูล WBS: " + state.importInfo));
       runs.forEach(function(run){
@@ -1027,8 +1054,9 @@ details.edit .fields{margin-top:6px}
     var req = { action: "withdraw", user: user, pile: wz.pile, key: wz.key, labels: Array.from(wz.sel), booking: wz.booking, contractor: wz.contractor };
     var wbs = line.wbs, keep = wz;
     wz = null; justSaved = true;
-    request(req, true).then(function(){
-      frame(null); toast("บันทึกแล้ว เบิก " + n + " ต้น ให้ " + wbs);
+    request(req, true).then(function(res){
+      if (res && res.id) { addMine(res.id); renderW(); }
+      frame(null); toast("บันทึกแล้ว เบิก " + n + " ต้น ให้ " + wbs + " ถ้าเบิกผิด ยกเลิกเองได้ภายใน 10 นาที");
     }, function(e){
       justSaved = false; wz = keep;
       var run = runOf(wz.pile);
@@ -1036,6 +1064,50 @@ details.edit .fields{margin-top:6px}
       wz.sel.forEach(function(l){ if (run.gone.has(l)) wz.sel.delete(l); });
       paint(); renderW(); err(e.message);
     });
+  }
+
+  /* ---------- cancel single poles ---------- */
+  var undoPick = {};                            // entry id -> Set of labels, survives the 20 s refresh
+  function canSelfUndo(e){ return mineIds().indexOf(e.id) >= 0 && e.user === lsGet("pole-user") && Date.now() - e.ts < UNDO_MS; }
+  function undoBox(e){
+    var self = canSelfUndo(e), adm = !!$("inAdmin").value;
+    if (!self && !adm) return null;
+    var pick = undoPick[e.id] = undoPick[e.id] || new Set();
+    pick.forEach(function(l){ if (e.labels.indexOf(l) < 0) pick.delete(l); });
+    var wrap = el("div", "undo");
+    var mins = Math.max(1, Math.ceil((UNDO_MS - (Date.now() - e.ts)) / 60000));
+    wrap.appendChild(el("p", "note", self ? "เบิกผิด? แตะเลขที่จะคืนเข้ากอง แล้วกดยกเลิก (ทำเองได้อีกประมาณ " + mins + " นาที)"
+                                           : "ผู้ดูแล: แตะเลขที่จะคืนเข้ากอง แล้วกดยกเลิก"));
+    var list = el("div", "undo-list"), go = el("button", "small", ""); go.type = "button";
+    var armed = false, timer = null;
+    function upd(){
+      armed = false; clearTimeout(timer);
+      go.disabled = !pick.size;
+      go.textContent = pick.size ? "ยกเลิก " + pick.size + " ต้น (คืนเข้ากอง)" : "เลือกเลขที่จะยกเลิก";
+    }
+    e.labels.forEach(function(l){
+      var b = el("button", "pg", l); b.type = "button";
+      b.setAttribute("aria-pressed", pick.has(l) ? "true" : "false");
+      b.setAttribute("aria-label", "เลือกเสาเลข " + l + " เพื่อยกเลิก");
+      b.addEventListener("click", function(){
+        if (pick.has(l)) pick.delete(l); else pick.add(l);
+        b.setAttribute("aria-pressed", pick.has(l) ? "true" : "false"); upd();
+      });
+      list.appendChild(b);
+    });
+    go.addEventListener("click", function(){
+      if (!pick.size) return;
+      if (!armed) { armed = true; go.textContent = "กดอีกครั้งเพื่อยืนยันยกเลิก " + pick.size + " ต้น"; timer = setTimeout(upd, 3000); return; }
+      var labels = Array.from(pick), n = labels.length;
+      go.disabled = true; go.textContent = "กำลังยกเลิก";
+      request({ action: "undoPoles", id: e.id, labels: labels, user: lsGet("pole-user"), admin: $("inAdmin").value }, true).then(function(){
+        delete undoPick[e.id]; toast("ยกเลิกแล้ว " + n + " ต้น เสากลับเข้ากอง");
+      }, function(err){ upd(); toast(err.message); });
+    });
+    upd();
+    wrap.appendChild(list);
+    var a = el("div", "row-actions"); a.appendChild(go); wrap.appendChild(a);
+    return wrap;
   }
 
   /* ---------- history ---------- */
@@ -1056,6 +1128,7 @@ details.edit .fields{margin-top:6px}
       });
       card.appendChild(dl);
       card.appendChild(el("div", "labels", "เลขเสา " + e.labels.join(", ")));
+      var ub = undoBox(e); if (ub) card.appendChild(ub);
       var b = el("button", "small", "ยกเลิกรายการนี้ (ผู้ดูแล)"); b.type = "button";
       twoStep(b, "ยกเลิกรายการนี้ (ผู้ดูแล)", function(){
         if (!$("inAdmin").value) { toast("ใส่รหัสผู้ดูแลในแท็บ ผู้ดูแล ก่อน"); return; }
