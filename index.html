@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>กองเสา 3D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
+<script>
+/* ============================================================
+   วาง URL ของ Apps Script Web app (ลงท้ายด้วย /exec) ไว้ในเครื่องหมายคำพูดด้านล่าง
+   ถ้าเว้นว่าง หน้านี้จะทำงานในโหมดทดลอง เก็บข้อมูลในเครื่องเดียว
+   ============================================================ */
+var API_URL = "https://script.google.com/macros/s/AKfycbwcn-K91DCJqq7T0dNRDEhegIJxdMHp5ENz9_vdwXuAeovaSA0dN3PC_YMn2-tdzhRH/exec";
+</script>
+<style>
+/* Layout: 3D yard fills the left, a tabbed panel (withdraw / history / admin) on the right; stacks on phones. */
+:root{
+  --bg:#eef0ee; --panel:#ffffff; --ink:#1d2327; --muted:#667079; --line:#d5dad8;
+  --accent:#d9580b; --accent-ink:#ffffff; --accent-soft:#fdeee3; --gone:#9aa3a8;
+  --scene-sky:#dfe6e8; --scene-ground:#a9ad9f;
+  --font-display:"Chakra Petch","IBM Plex Sans Thai",system-ui,sans-serif;
+  --font-body:"IBM Plex Sans Thai",system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#14181a;--panel:#1c2225;--ink:#e8ecec;--muted:#98a3a8;--line:#30393d;
+    --accent:#ff8a3d;--accent-ink:#1b1206;--accent-soft:#3a2616;--gone:#5d676c;
+    --scene-sky:#1f282c;--scene-ground:#3b4039;
+    color-scheme:dark;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-size:15px;line-height:1.5}
+.app{height:100%;display:grid;grid-template-columns:minmax(0,1fr) 390px}
+.stage{position:relative;min-height:0;min-width:0;overflow:hidden;background:var(--scene-sky)}
+.stage canvas{display:block;width:100%;height:100%;touch-action:none}
+.hint{position:absolute;left:16px;bottom:14px;right:16px;font-size:13px;color:var(--ink);opacity:.75;pointer-events:none}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--panel);font-family:var(--font-display);font-weight:600;
+  padding:4px 10px;border-radius:6px;font-size:14px;transform:translate(-50%,-140%);white-space:nowrap;display:none}
+.toast{position:absolute;top:52px;left:50%;transform:translateX(-50%);max-width:calc(100% - 32px);background:var(--ink);color:var(--panel);
+  padding:8px 14px;border-radius:8px;font-size:14px;display:none;text-align:center;z-index:3}
+.mode{position:absolute;top:14px;left:16px;right:16px;display:none;pointer-events:none}
+.mode span{display:inline-block;background:var(--accent);color:var(--accent-ink);font-weight:600;padding:5px 12px;border-radius:8px;font-size:14px;max-width:100%}
+.msg{position:absolute;inset:0;display:none;align-items:center;justify-content:center;padding:24px;text-align:center;color:var(--muted)}
+.panel{background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+.head{padding:14px 18px 0;display:flex;flex-direction:column;gap:10px}
+.title{display:flex;align-items:center;justify-content:space-between;gap:10px}
+h1{font-family:var(--font-display);font-size:20px;font-weight:700;margin:0;letter-spacing:.01em}
+.conn{font-size:12.5px;color:var(--muted);text-align:right}
+.conn.warn{color:var(--accent);font-weight:600}
+.stats{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:8px}
+.stat{border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.stat b{display:block;font-family:var(--font-display);font-size:22px;line-height:1.1;font-variant-numeric:tabular-nums}
+.stat span{font-size:12px;color:var(--muted)}
+.stat.main{border-color:var(--accent)}
+.stat.main b{color:var(--accent)}
+.tabs{display:flex;border-bottom:1px solid var(--line);margin:0 -8px}
+.tabs button{border:0;border-bottom:3px solid transparent;border-radius:0;padding:9px 10px;font-weight:600;color:var(--muted);flex:1}
+.tabs button[aria-selected="true"]{color:var(--accent);border-bottom-color:var(--accent)}
+.body{flex:1;min-height:0;overflow-y:auto;padding:14px 18px 18px}
+.col{display:flex;flex-direction:column;gap:12px}
+button,.filebtn{font:inherit;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:7px;padding:6px 12px;cursor:pointer}
+button:hover,.filebtn:hover{border-color:var(--accent);color:var(--accent)}
+.tabs button:hover{border-color:transparent;border-bottom-color:var(--line)}
+button.primary,.filebtn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+button.primary:hover{color:var(--accent-ink);filter:brightness(1.08)}
+button.big{font-size:18px;padding:14px;font-family:var(--font-display);font-weight:700}
+button.small{font-size:13px;padding:3px 9px}
+button:disabled{opacity:.5;cursor:default}
+:focus-visible,.filebtn:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+.card{border:1px solid var(--line);border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.card.active{border-color:var(--accent);background:var(--accent-soft)}
+.card-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.card h2,.step{font-family:var(--font-display);font-size:16px;font-weight:700;margin:0;overflow-wrap:anywhere}
+.count{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.count b{color:var(--accent);font-family:var(--font-display);font-size:16px}
+.row-actions{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.list{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px}
+.chip{display:flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:7px;padding:6px 8px;cursor:pointer;min-width:0;background:var(--panel);
+  font-family:var(--font-display);font-weight:600;font-variant-numeric:tabular-nums;user-select:none;overflow-wrap:anywhere}
+.chip input{accent-color:var(--accent);width:16px;height:16px;margin:0;cursor:pointer;flex:none}
+.chip.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.chip.gone{color:var(--gone);text-decoration:line-through;background:var(--bg);cursor:default}
+.pilebtn{text-align:left;display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 12px;border-radius:9px;width:100%}
+.pilebtn .nm{font-family:var(--font-display);font-weight:700;overflow-wrap:anywhere}
+.pilebtn .left{font-family:var(--font-display);font-weight:700;color:var(--accent);font-size:17px;white-space:nowrap;grid-row:span 2;align-self:center;font-variant-numeric:tabular-nums}
+.pilebtn .sub{font-size:13px;color:var(--muted)}
+.pilebtn:hover{color:inherit}
+.pill{border:1px solid var(--line);border-radius:999px;padding:0 8px;font-size:12.5px;white-space:nowrap}
+.pill.type{border-color:var(--accent);color:var(--accent);font-weight:600}
+dl.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:0;font-size:14px}
+dl.kv dt{color:var(--muted)}
+dl.kv dd{margin:0;overflow-wrap:anywhere}
+.fields{display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:center;font-size:14px}
+input[type=number],input[type=text],input[type=password],select,textarea{font:inherit;width:100%;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);min-width:0}
+select{padding:8px}
+textarea{min-height:96px;resize:vertical;font-family:var(--font-display);font-variant-numeric:tabular-nums}
+.filebtn{display:inline-flex;align-items:center;justify-content:center;position:relative;font-weight:600;text-align:center}
+.filebtn input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.inline{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.inline input{width:76px}
+.status{font-size:13px;color:var(--muted);margin:0;min-height:1.2em}
+.status.err{color:var(--accent);font-weight:600}
+.check{display:flex;gap:8px;align-items:flex-start;font-size:14px}
+.check input{accent-color:var(--accent);margin-top:4px}
+.note{font-size:12.5px;color:var(--muted);margin:0}
+.empty{color:var(--muted);font-size:14px;margin:0}
+.sel-list,.labels{font-family:var(--font-display);font-weight:600;overflow-wrap:anywhere}
+.entry time{font-size:13px;color:var(--muted)}
+h3{font-size:14px;font-weight:600;margin:0}
+hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
+[hidden]{display:none !important}
+@media (max-width:760px){
+  .app{grid-template-columns:1fr;grid-template-rows:40% 60%}
+  .panel{border-left:0;border-top:1px solid var(--line)}
+  .head{padding:10px 16px 0;gap:8px}
+  .body{padding:12px 16px 16px}
+  h1{font-size:17px}
+  .stat b{font-size:19px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="stage" id="stage">
+    <div class="mode" id="mode"><span id="modeText"></span></div>
+    <div class="toast" id="toast" role="status"></div>
+    <div class="tip" id="tip"></div>
+    <div class="msg" id="msg">อุปกรณ์นี้เปิดภาพ 3D ไม่ได้ ยังใช้รายการทางขวาเบิกเสาได้ตามปกติ</div>
+    <div class="hint">ลากเพื่อหมุน · เลื่อนล้อเมาส์หรือถ่างนิ้วเพื่อซูม</div>
+  </div>
+  <aside class="panel">
+    <div class="head">
+      <div class="title"><h1>กองเสา 3D</h1><div class="conn" id="conn"></div></div>
+      <div class="stats">
+        <div class="stat main"><b id="sLeft">0</b><span>คงเหลือในลาน (ต้น)</span></div>
+        <div class="stat"><b id="sOut">0</b><span>เบิกแล้ว</span></div>
+        <div class="stat"><b id="sAll">0</b><span>ทั้งหมด</span></div>
+      </div>
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" id="tab-w" aria-controls="pan-w" aria-selected="true">เบิกเสา</button>
+        <button type="button" role="tab" id="tab-h" aria-controls="pan-h" aria-selected="false">ประวัติ</button>
+        <button type="button" role="tab" id="tab-a" aria-controls="pan-a" aria-selected="false">ผู้ดูแล</button>
+      </div>
+    </div>
+    <div class="body" id="body">
+      <div class="col" id="pan-w" role="tabpanel" aria-labelledby="tab-w"></div>
+
+      <div class="col" id="pan-h" role="tabpanel" aria-labelledby="tab-h" hidden>
+        <div id="history" class="col"></div>
+      </div>
+
+      <div class="col" id="pan-a" role="tabpanel" aria-labelledby="tab-a" hidden>
+        <div class="fields">
+          <label for="inAdmin">รหัสผู้ดูแล</label><input type="password" id="inAdmin" autocomplete="off" maxlength="40">
+        </div>
+        <p class="note">ต้องใส่รหัสก่อนอัปไฟล์ WBS เพิ่มหรือลบกอง และยกเลิกรายการเบิก รหัสตั้งได้ในแท็บ ตั้งค่า ของ Google Sheet</p>
+        <hr>
+        <h3>ข้อมูล WBS</h3>
+        <p class="status" id="impInfo"></p>
+        <label class="filebtn primary" id="impBtn">อัปไฟล์ผลลัพธ์ zcn52n (.xlsx)<input type="file" id="inXlsx" accept=".xlsx,.xlsm,.xls"></label>
+        <p class="status" id="impStatus" role="status"></p>
+        <hr>
+        <h3>กองเสา</h3>
+        <div id="pilesAdmin" class="col"></div>
+        <div class="card">
+          <h2>เพิ่มกองเสา</h2>
+          <div class="fields">
+            <label for="inType">ชนิดเสา</label><select id="inType"></select>
+            <label for="inName">ชื่อกอง</label><input type="text" id="inName" placeholder="เช่น เสา 9 ม. ลานหลัง" maxlength="40">
+            <label for="inPer">ต้นต่อชั้น</label><input type="number" id="inPer" min="1" max="20" step="1" value="6">
+          </div>
+          <label for="inNums">เลขเสา</label>
+          <textarea id="inNums" placeholder="พิมพ์หรือวางเลขเสา คั่นด้วยเว้นวรรค&#10;ถ้าพิมพ์หลายบรรทัด แต่ละบรรทัดคือ 1 ชั้น (บรรทัดบนสุด = ชั้นบนสุด)"></textarea>
+          <div class="inline">
+            <span>หรือเติมเลขเรียง</span>
+            <input type="number" id="inCount" min="1" max="200" step="1" value="12" aria-label="จำนวนต้น">
+            <span>ต้น เริ่มที่</span>
+            <input type="number" id="inStart" min="0" max="999999" step="1" value="1" aria-label="เลขเริ่มต้น">
+            <button type="button" class="small" id="btnFill">เติม</button>
+          </div>
+          <p class="status" id="status" role="status"></p>
+          <button type="button" class="primary" id="btnAdd">สร้างกองเสา</button>
+        </div>
+        <hr>
+        <label class="check" for="inSettle"><input type="checkbox" id="inSettle"><span>เมื่อเบิกเสาออก ให้เสาที่อยู่ข้างบนเลื่อนลงมาแทนที่ (ตั้งค่าเฉพาะเครื่องนี้)</span></label>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+(function(){
+  "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+  function el(tag, cls, text){ var e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+  function seq(n, start){ var a = []; for (var i = 0; i < n; i++) a.push(String(start + i)); return a; }
+  function chunk(arr, per){ var rows = []; for (var i = 0; i < arr.length; i += per) rows.push(arr.slice(i, i + per)); return rows; }
+  function clamp(v, lo, hi, fallback){ v = Number(v); return Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback; }
+  function lenOf(desc){ var m = /(\d+(?:\.\d+)?)\s*M/i.exec(desc || ""); return clamp(m ? m[1] : 9, 4, 24, 9); }
+  function shortType(desc){ return String(desc || "").replace(/\s+/g, " ").replace(/\.$/, "").trim(); }
+  function lsGet(k){ try { return localStorage.getItem(k) || ""; } catch (e) { return ""; } }
+  function lsSet(k, v){ try { localStorage.setItem(k, v); } catch (e) {} }
+
+  /*PARSE-START*/
+  // Reads the "Main 281" tab of the zcn52n result workbook and keeps the pole rows that still have คงเหลือ.
+  function parseDemand(sheets){
+    var need = ["องค์ประกอบ WBS", "ใบสั่ง/โครงข่าย", "วัสดุ", "คำอธิบายของวัสดุ", "คงเหลือ"];
+    function headerOf(aoa){
+      for (var i = 0; i < Math.min(aoa.length, 10); i++) {
+        var row = (aoa[i] || []).map(function(c){ return String(c == null ? "" : c).trim(); });
+        if (need.every(function(n){ return row.indexOf(n) >= 0; })) return { at: i, row: row };
+      }
+      return null;
+    }
+    var names = Object.keys(sheets), pickName = null, head = null;
+    var order = names.filter(function(n){ return n.trim() === "Main 281"; }).concat(names);
+    for (var i = 0; i < order.length && !head; i++) { head = headerOf(sheets[order[i]]); if (head) pickName = order[i]; }
+    if (!head) return { error: "ไม่พบแท็บ Main 281 หรือคอลัมน์ที่ต้องใช้ (" + need.join(", ") + ")" };
+    var ix = {}; head.row.forEach(function(n, i){ if (!(n in ix)) ix[n] = i; });
+    function cell(r, n){ var v = n in ix ? r[ix[n]] : ""; return v == null ? "" : String(v).trim(); }
+    var map = {}, lines = [], aoa = sheets[pickName];
+    for (var r = head.at + 1; r < aoa.length; r++) {
+      var row = aoa[r] || [], mat = cell(row, "วัสดุ"), desc = cell(row, "คำอธิบายของวัสดุ");
+      if (!(mat.indexOf("1-00-001-") === 0 || /^POLE\b/i.test(desc))) continue;
+      var remain = Number(cell(row, "คงเหลือ"));
+      if (!(remain > 0)) continue;
+      var o = { wbs: cell(row, "องค์ประกอบ WBS"), job: cell(row, "ชื่องาน"), net: cell(row, "ใบสั่ง/โครงข่าย"), mat: mat, desc: desc,
+                booking: cell(row, "เลขที่ใบจองพัสดุ"), contractor: cell(row, "ผู้รับเหมา"), remain: remain };
+      o.key = [o.wbs, o.net, o.mat, o.booking].join("|");
+      if (map[o.key]) map[o.key].remain += remain; else { map[o.key] = o; lines.push(o); }
+    }
+    return { lines: lines, sheet: pickName };
+  }
+  /*PARSE-END*/
+
+  var TYPES0 = { "1-00-001-0002": "POLE  9 M.", "1-00-001-0004": "POLE 12 M.", "1-00-001-0012": "POLE 12.2 M.",
+                 "1-00-001-0013": "POLE 14.3 M.", "1-00-001-0021": "POLE 9 M CORROSION-RESISTANT" };
+  var types = Object.assign({}, TYPES0);
+  function typeDesc(mat){ return shortType(types[mat] || mat); }
+
+  /* ---------- backend: Google Sheet through Apps Script, or a local trial copy ---------- */
+  var API = (typeof API_URL === "string" && API_URL.trim()) || "";
+  var LOCAL_KEY = "pole-pile-local-v1";
+
+  /*LOCAL-START*/
+  function localDefault(){
+    return { admin: "1234", importId: "", importInfo: "", demand: [], log: [], piles: [
+      { name: "ตัวอย่าง เสา 9 ม.",    mat: "1-00-001-0002", rows: chunk(seq(18, 101), 6), removed: [] },
+      { name: "ตัวอย่าง เสา 12 ม.",   mat: "1-00-001-0004", rows: chunk(seq(10, 201), 5), removed: [] },
+      { name: "ตัวอย่าง เสา 14.3 ม.", mat: "1-00-001-0013", rows: chunk(seq(6, 301), 3),  removed: [] } ] };
+  }
+  // Same actions and answers as Code.gs, kept in this browser only.
+  function localRun(db, req){
+    function fail(m){ throw new Error(m); }
+    function admin(){ if (String(req.admin || "") !== db.admin) fail("รหัสผู้ดูแลไม่ถูกต้อง (โหมดทดลองใช้ 1234)"); }
+    function view(){
+      var used = {};
+      db.log.forEach(function(e){ if (e.importId === db.importId) used[e.key] = (used[e.key] || 0) + e.labels.length; });
+      db.demand.forEach(function(l){ l.left = Math.max(0, Math.floor(l.remain - (used[l.key] || 0))); });
+      return { importId: db.importId, importInfo: db.importInfo, demand: db.demand, piles: db.piles, log: db.log.slice(-200) };
+    }
+    try {
+      var a = req.action;
+      if (a === "withdraw") {
+        var user = String(req.user || "").trim(), labels = (req.labels || []).map(String);
+        if (!user) fail("ยังไม่ได้ใส่ชื่อผู้เบิก");
+        if (!labels.length) fail("ยังไม่ได้เลือกเสา");
+        var line = view().demand.filter(function(l){ return l.key === req.key; })[0];
+        if (!line) fail("ไม่พบ WBS นี้ในข้อมูลล่าสุด กดรีเฟรชแล้วเลือกใหม่");
+        if (labels.length > line.left) fail("WBS นี้เบิกได้อีก " + line.left + " ต้นเท่านั้น");
+        var pile = db.piles.filter(function(p){ return p.name === req.pile; })[0];
+        if (!pile) fail("ไม่พบกอง " + req.pile);
+        if (pile.mat !== line.mat) fail("กอง " + pile.name + " ไม่ใช่เสาชนิดที่ WBS นี้จองไว้");
+        var all = [].concat.apply([], pile.rows);
+        labels.forEach(function(l){
+          if (all.indexOf(l) < 0) fail("ไม่พบเสาเลข " + l + " ในกอง " + pile.name);
+          if (pile.removed.indexOf(l) >= 0) fail("เสาเลข " + l + " ถูกเบิกไปแล้ว กดรีเฟรชแล้วเลือกใหม่");
+        });
+        pile.removed = pile.removed.concat(labels);
+        db.log.push({ id: Date.now().toString(36), ts: Date.now(), user: user, wbs: line.wbs, job: line.job, net: line.net, mat: line.mat, desc: line.desc,
+          booking: String(req.booking || "").trim() || line.booking, contractor: String(req.contractor || "").trim() || line.contractor,
+          pile: pile.name, labels: labels, key: line.key, importId: db.importId });
+      } else if (a === "undo") {
+        admin();
+        var e = db.log.filter(function(x){ return x.id === req.id; })[0];
+        if (!e) fail("ไม่พบรายการนี้ อาจถูกยกเลิกไปแล้ว");
+        db.piles.forEach(function(p){ if (p.name === e.pile) p.removed = p.removed.filter(function(l){ return e.labels.indexOf(l) < 0; }); });
+        db.log.splice(db.log.indexOf(e), 1);
+      } else if (a === "upload") {
+        admin();
+        if (!(req.lines || []).length) fail("ไฟล์นี้ไม่มีรายการเสาที่มีคงเหลือ");
+        db.demand = req.lines; db.importId = String(Date.now());
+        db.importInfo = String(req.info || "") + " · อัปเมื่อ " + new Date().toLocaleString("sv-SE").slice(0, 16);
+      } else if (a === "addPile") {
+        admin();
+        if (db.piles.some(function(p){ return p.name === req.name; })) fail("มีกองชื่อ " + req.name + " อยู่แล้ว");
+        db.piles.push({ name: req.name, mat: req.mat, rows: req.rows, removed: [] });
+      } else if (a === "deletePile") {
+        admin();
+        db.piles = db.piles.filter(function(p){ return p.name !== req.name; });
+      } else if (a === "checkAdmin") admin();
+      return { ok: true, state: view() };
+    } catch (err) { return { ok: false, error: String(err.message || err) }; }
+  }
+  /*LOCAL-END*/
+
+  function call(req){
+    if (API) {
+      return fetch(API, { method: "POST", headers: { "Content-Type": "text/plain;charset=utf-8" }, body: JSON.stringify(req), redirect: "follow" })
+        .then(function(r){ return r.json(); });
+    }
+    var db; try { db = JSON.parse(lsGet(LOCAL_KEY)); } catch (e) {}
+    if (!db || !Array.isArray(db.piles)) db = localDefault();
+    var res = localRun(db, req);
+    if (res.ok) lsSet(LOCAL_KEY, JSON.stringify(db));
+    return Promise.resolve(JSON.parse(JSON.stringify(res)));
+  }
+
+  var state = { importId: "", importInfo: "", demand: [], piles: [], log: [] };
+  var pileSig = null, busy = false, loaded = false;
+  var settle = lsGet("pole-settle") !== "0";
+
+  // every server answer carries the whole state; show it
+  function request(req, quiet){
+    busy = true; setConn("กำลังเชื่อมต่อ");
+    return call(req).then(function(res){
+      busy = false;
+      if (!res || !res.ok) { setConn(); throw new Error(res && res.error || "เซิร์ฟเวอร์ตอบกลับไม่ถูกต้อง"); }
+      loaded = true; applyState(res.state); setConn();
+      return res;
+    }, function(){
+      busy = false; setConn("เชื่อมต่อ Google Sheet ไม่ได้", true);
+      throw new Error("เชื่อมต่อ Google Sheet ไม่ได้ ตรวจอินเทอร์เน็ตแล้วลองใหม่");
+    }).catch(function(err){ if (!quiet) toast(err.message); throw err; });
+  }
+  function setConn(text, warn){
+    var c = $("conn");
+    c.textContent = text || (API ? "เชื่อมกับ Google Sheet" : "โหมดทดลอง ข้อมูลอยู่ในเครื่องนี้เท่านั้น");
+    c.classList.toggle("warn", !!warn || (!text && !API));
+  }
+
+  var pilesAdminEl = $("pilesAdmin"), tip = $("tip"), stage = $("stage"), statusEl = $("status");
+  var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var GAP = 1.4, BAT = 0.07;
+  function section(len){ return 0.18 + len * 0.009; }
+  var COL_NORMAL = 0xbdbab1, COL_DIM = 0x7b7973, COL_SEL = 0xf07a22;
+
+  var three = null, runs = [], poles = [];
+  var wz = null; // withdrawal in progress: {pile: name|"", key: lineKey|"", sel:Set<label>, booking, contractor}
+
+  function cssVar(name){ return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+  function initThree(){
+    if (!window.THREE) return null;
+    var renderer;
+    try { renderer = new THREE.WebGLRenderer({ antialias: true }); } catch (e) { return null; }
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    stage.insertBefore(renderer.domElement, stage.firstChild);
+    var scene = new THREE.Scene();
+    var camera = new THREE.PerspectiveCamera(40, 1, 0.1, 400);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f85, 0.85));
+    var sun = new THREE.DirectionalLight(0xffffff, 0.75);
+    sun.position.set(8, 16, 12);
+    sun.castShadow = true;
+    sun.shadow.mapSize.set(2048, 2048);
+    scene.add(sun);
+    var ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), new THREE.MeshStandardMaterial({ color: 0xa9ad9f, roughness: 1 }));
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+    var controls = null;
+    if (THREE.OrbitControls) {
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.maxPolarAngle = Math.PI / 2 - 0.03;
+      controls.minDistance = 2;
+      controls.maxDistance = 120;
+    }
+    var yard = new THREE.Group();
+    scene.add(yard);
+    return { renderer: renderer, scene: scene, camera: camera, controls: controls, ground: ground, yard: yard, sun: sun,
+             batMat: new THREE.MeshStandardMaterial({ color: 0x8a6a45, roughness: 1 }),
+             ray: new THREE.Raycaster(), ptr: new THREE.Vector2(), framedFor: -1 };
+  }
+  function applySceneTheme(){
+    if (!three) return;
+    var sky = cssVar("--scene-sky") || "#dfe6e8", gr = cssVar("--scene-ground") || "#a9ad9f";
+    three.scene.background = new THREE.Color(sky);
+    three.scene.fog = new THREE.Fog(sky, 60, 160);
+    three.ground.material.color.set(gr);
+  }
+  function labelTexture(label){
+    var c = document.createElement("canvas"); c.width = c.height = 128;
+    var g = c.getContext("2d");
+    g.fillStyle = "#f6f4ee"; g.fillRect(0, 0, 128, 128);
+    g.strokeStyle = "#d9580b"; g.lineWidth = 10; g.strokeRect(5, 5, 118, 118);
+    var n = label.length, size = n <= 2 ? 78 : n === 3 ? 56 : n === 4 ? 42 : n <= 6 ? 30 : 22;
+    g.fillStyle = "#1d2327";
+    g.font = "700 " + size + "px 'Chakra Petch', Arial, sans-serif";
+    g.textAlign = "center"; g.textBaseline = "middle";
+    if (n > 8) { var half = Math.ceil(n / 2); g.fillText(label.slice(0, half), 64, 50); g.fillText(label.slice(half), 64, 84); }
+    else g.fillText(label, 64, 68);
+    var t = new THREE.CanvasTexture(c);
+    t.anisotropy = 4;
+    return t;
+  }
+  function signTexture(text){
+    var c = document.createElement("canvas"); c.width = 512; c.height = 112;
+    var g = c.getContext("2d");
+    g.font = "700 52px 'Chakra Petch','IBM Plex Sans Thai', Arial, sans-serif";
+    var w = Math.min(500, g.measureText(text).width + 56), x = (512 - w) / 2;
+    g.fillStyle = "rgba(29,35,39,.88)";
+    g.beginPath();
+    g.moveTo(x + 20, 8); g.arcTo(x + w, 8, x + w, 104, 20); g.arcTo(x + w, 104, x, 104, 20);
+    g.arcTo(x, 104, x, 8, 20); g.arcTo(x, 8, x + w, 8, 20); g.fill();
+    g.fillStyle = "#ffffff"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText(text, 256, 60, 460);
+    return new THREE.CanvasTexture(c);
+  }
+  function clearScene(){
+    if (!three) return;
+    runs.forEach(function(run){
+      run.poles.forEach(function(p){ p.mats.forEach(function(m){ if (m.map) m.map.dispose(); m.dispose(); }); });
+      run.battens.forEach(function(b){ b.mesh.geometry.dispose(); });
+      if (run.sign) { run.sign.material.map.dispose(); run.sign.material.dispose(); }
+      if (run.geo) run.geo.dispose();
+      if (run.root) three.yard.remove(run.root);
+    });
+  }
+
+  function build(){
+    clearScene();
+    runs = []; poles = [];
+    var maxLen = 0, totalW = 0, maxH = 0;
+    state.piles.forEach(function(d){
+      var len = lenOf(types[d.mat]), S = section(len);
+      var cols = d.rows.reduce(function(m, r){ return Math.max(m, r.length); }, 1);
+      var run = { name: d.name, mat: d.mat, rows: d.rows, len: len, S: S, pitchX: S + 0.08, pitchY: S + BAT, cols: cols, poles: [], battens: [], gone: new Set(d.removed) };
+      run.width = cols * run.pitchX;
+      run.height = d.rows.length * run.pitchY;
+      runs.push(run);
+      maxLen = Math.max(maxLen, len);
+      totalW += run.width;
+      maxH = Math.max(maxH, run.height);
+    });
+    totalW += GAP * Math.max(0, runs.length - 1);
+    var x = -totalW / 2;
+    runs.forEach(function(run){
+      var len = run.len;
+      run.cx = x + run.width / 2;
+      x += run.width + GAP;
+      if (three) {
+        run.root = new THREE.Group();
+        run.root.position.set(run.cx, 0, (maxLen - len) / 2); // butt ends of every pile line up at the front
+        three.yard.add(run.root);
+        var k = Math.SQRT1_2;
+        run.geo = new THREE.CylinderGeometry(run.S * k, run.S * 0.62 * k, len, 4, 1);
+        run.geo.rotateY(Math.PI / 4);
+        run.geo.rotateX(Math.PI / 2);
+        run.rows.forEach(function(_, layer){
+          [-len / 3, 0, len / 3].forEach(function(z){
+            var m = new THREE.Mesh(new THREE.BoxGeometry(run.width + 0.2, BAT, 0.1), three.batMat);
+            m.position.set(0, layer * run.pitchY + BAT / 2, z);
+            m.castShadow = true; m.receiveShadow = true;
+            run.root.add(m);
+            run.battens.push({ mesh: m, layer: layer });
+          });
+        });
+        var sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTexture(run.name), depthTest: false }));
+        sign.scale.set(2.6, 0.57, 1);
+        sign.position.set(0, run.height + 0.55, len / 2);
+        sign.renderOrder = 10;
+        run.root.add(sign);
+        run.sign = sign;
+      }
+      run.rows.forEach(function(row, layer){
+        row.forEach(function(label, col){
+          var p = { label: label, run: run, col: col, layer: layer, alpha: 1, ty: 0, mats: [], gone: run.gone.has(label) };
+          if (three) {
+            var body = new THREE.MeshStandardMaterial({ color: COL_NORMAL, roughness: 0.92, flatShading: true });
+            var tag = new THREE.MeshBasicMaterial({ map: labelTexture(label) });
+            p.mats = [body, tag];
+            var mesh = new THREE.Mesh(run.geo, body);
+            mesh.castShadow = true; mesh.receiveShadow = true;
+            mesh.userData.pole = p;
+            var front = new THREE.Mesh(new THREE.PlaneGeometry(run.S * 0.86, run.S * 0.86), tag);
+            front.position.z = len / 2 + 0.004;
+            var back = new THREE.Mesh(new THREE.PlaneGeometry(run.S * 0.55, run.S * 0.55), tag);
+            back.position.z = -len / 2 - 0.004; back.rotation.y = Math.PI;
+            var group = new THREE.Group();
+            group.add(mesh, front, back);
+            group.position.x = (col - (run.cols - 1) / 2) * run.pitchX;
+            p.group = group; p.mesh = mesh;
+            run.root.add(group);
+          }
+          run.poles.push(p); poles.push(p);
+        });
+      });
+    });
+    if (three) {
+      three.maxLen = maxLen; three.totalW = totalW; three.maxH = maxH;
+      var sc = three.sun.shadow.camera, ext = Math.max(10, totalW / 2 + maxLen / 2 + 2);
+      sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.near = 1; sc.far = 80;
+      sc.updateProjectionMatrix();
+      if (three.framedFor !== runs.length) { three.framedFor = runs.length; frame(null); }
+    }
+    layout(true);
+  }
+  // aim the camera at one pile, or at the whole yard
+  function frame(run){
+    if (!three) return;
+    var w = run ? run.width : three.totalW, cx = run ? run.cx : 0, h = run ? run.height : three.maxH;
+    var d = Math.max(run ? 7 : 11, w * 0.9 + three.maxLen * 0.55);
+    three.camera.position.set(cx + d * 0.42, d * 0.3, three.maxLen / 2 + d * 0.72);
+    if (three.controls) { three.controls.target.set(cx, h / 2, 0); three.controls.update(); }
+    else three.camera.lookAt(cx, h / 2, 0);
+  }
+  function layout(snap){
+    runs.forEach(function(run){
+      var count = {}, used = {};
+      run.poles.forEach(function(p){
+        var level = p.layer;
+        if (settle) {
+          if (!p.gone) { level = count[p.col] || 0; count[p.col] = level + 1; }
+          else level = Math.min(p.layer, count[p.col] || 0);
+        }
+        if (!p.gone) used[level] = true;
+        p.ty = level * run.pitchY + BAT + run.S / 2 + (p.gone ? 0.6 : 0);
+        if (p.group && (snap || reduceMotion)) {
+          p.alpha = p.gone ? 0 : 1;
+          p.group.position.y = p.ty;
+          applyAlpha(p);
+        }
+      });
+      run.battens.forEach(function(b){ b.mesh.visible = !!used[b.layer]; });
+    });
+  }
+  function applyAlpha(p){
+    var solid = p.alpha > 0.995;
+    p.mats.forEach(function(m){
+      if (m.transparent === solid) { m.transparent = !solid; m.needsUpdate = true; }
+      m.opacity = solid ? 1 : p.alpha;
+    });
+    p.group.visible = p.alpha > 0.02;
+    p.mesh.castShadow = p.alpha > 0.5;
+  }
+
+  function applyState(s){
+    state = s;
+    state.demand.forEach(function(l){ if (l.mat && l.desc) types[l.mat] = l.desc; });
+    var sig = JSON.stringify(state.piles.map(function(p){ return [p.name, p.mat, p.rows]; }));
+    var rebuilt = sig !== pileSig;
+    if (rebuilt) { pileSig = sig; build(); }
+    else {
+      runs.forEach(function(run, i){
+        run.gone = new Set(state.piles[i].removed);
+        run.poles.forEach(function(p){ p.gone = run.gone.has(p.label); });
+      });
+      layout(false);
+    }
+    if (wz) {
+      var run = runOf(wz.pile);
+      if (wz.pile && !run) wz = null;
+      else if (run) wz.sel.forEach(function(l){ if (run.gone.has(l)) wz.sel.delete(l); });
+    }
+    stats(); paint(); fillTypes(); renderHistory(); renderAdmin();
+    // do not redraw the form under someone's fingers; just tick off what changed
+    if (wz && wz.pile && !rebuilt && !justSaved) { syncChips(); updateCount(); } else renderW();
+    justSaved = false;
+  }
+  var justSaved = false;
+  function runOf(name){ return runs.filter(function(r){ return r.name === name; })[0] || null; }
+  function lineOf(key){ return state.demand.filter(function(l){ return l.key === key; })[0] || null; }
+  function leftIn(run){ return run.poles.filter(function(p){ return !p.gone; }).length; }
+
+  function stats(){
+    var out = poles.filter(function(p){ return p.gone; }).length;
+    $("sAll").textContent = poles.length; $("sOut").textContent = out; $("sLeft").textContent = poles.length - out;
+  }
+  function paint(){
+    poles.forEach(function(p){
+      if (!p.mats[0]) return;
+      var c = COL_NORMAL;
+      if (wz && wz.pile) c = p.run.name !== wz.pile ? COL_DIM : (wz.sel.has(p.label) ? COL_SEL : COL_NORMAL);
+      p.mats[0].color.setHex(c);
+    });
+  }
+  var hot = null;
+  function setHot(p){
+    if (hot === p) return;
+    if (hot && hot.mats[0]) hot.mats[0].emissive.setHex(0x000000);
+    hot = p;
+    if (hot && hot.mats[0]) hot.mats[0].emissive.setHex(0x8a3300);
+  }
+  var toastTimer = null;
+  function toast(text){
+    var t = $("toast"); t.textContent = text; t.style.display = "block";
+    clearTimeout(toastTimer); toastTimer = setTimeout(function(){ t.style.display = "none"; }, 3600);
+  }
+  function twoStep(btn, label, fn){
+    var armed = false, timer = null;
+    btn.addEventListener("click", function(){
+      if (!armed) {
+        armed = true; btn.textContent = "กดอีกครั้งเพื่อยืนยัน";
+        timer = setTimeout(function(){ armed = false; btn.textContent = label; }, 3000);
+        return;
+      }
+      clearTimeout(timer); armed = false; btn.textContent = label; fn();
+    });
+  }
+
+  /* ---------- withdraw: เบิก > กอง > WBS > เสา > บันทึก ---------- */
+  function makeChip(p){
+    var chip = el("label", "chip"), box = document.createElement("input");
+    box.type = "checkbox";
+    box.setAttribute("aria-label", "เสาเลข " + p.label);
+    chip.appendChild(box); chip.appendChild(document.createTextNode(p.label));
+    chip._pole = p; chip._box = box;
+    box.addEventListener("change", function(){ clickPole(p); });
+    chip.addEventListener("mouseenter", function(){ setHot(p); });
+    chip.addEventListener("mouseleave", function(){ setHot(null); });
+    return chip;
+  }
+  function syncChips(){
+    var chips = document.querySelectorAll(".chip");
+    for (var i = 0; i < chips.length; i++) {
+      var c = chips[i], p = c._pole; if (!p) continue;
+      var sel = !!(wz && wz.pile === p.run.name && wz.sel.has(p.label));
+      c._box.checked = p.gone || sel;
+      c._box.disabled = p.gone;
+      c.classList.toggle("gone", p.gone);
+      c.classList.toggle("sel", sel);
+    }
+  }
+  function clickPole(p){
+    if (p.gone) return;
+    if (!wz) { toast("กดปุ่ม เบิกเสา ก่อน"); syncChips(); return; }
+    if (!wz.pile) { choosePile(p.run.name); return; }
+    if (p.run.name !== wz.pile) { toast("กำลังเบิกจากกอง " + wz.pile + " ถ้าจะเปลี่ยน กด เปลี่ยนกอง"); return; }
+    var line = lineOf(wz.key);
+    if (!line) { toast("เลือก WBS ก่อน แล้วค่อยเลือกเสา"); syncChips(); return; }
+    if (wz.sel.has(p.label)) wz.sel.delete(p.label);
+    else if (wz.sel.size >= line.left) toast("WBS นี้เบิกได้อีก " + line.left + " ต้นเท่านั้น");
+    else wz.sel.add(p.label);
+    paint(); syncChips(); updateCount();
+  }
+  function choosePile(name){
+    wz.pile = name; wz.key = ""; wz.sel.clear();
+    frame(runOf(name)); paint(); renderW();
+  }
+  function updateCount(){
+    if (!wz || !wz.pile) return;
+    var line = lineOf(wz.key), n = wz.sel.size;
+    var c = $("actCount"), s = $("actSel"), b = $("actOk");
+    if (c) { c.textContent = ""; if (line) { c.appendChild(document.createTextNode("เลือกแล้ว ")); c.appendChild(el("b", null, n)); c.appendChild(document.createTextNode(" / " + line.left + " ต้น")); } }
+    if (s) s.textContent = n ? "เลขเสา " + Array.from(wz.sel).join(", ") : "";
+    if (b) { b.disabled = !n || busy; b.textContent = n ? "บันทึกการเบิก " + n + " ต้น" : "บันทึกการเบิก"; }
+  }
+
+  function renderW(){
+    var box = $("pan-w"); box.textContent = "";
+    $("mode").style.display = wz && wz.pile ? "block" : "none";
+    if (!loaded) { box.appendChild(el("p", "empty", "กำลังโหลดข้อมูล")); return; }
+
+    if (!wz) {                                   // start screen
+      var go = el("button", "primary big", "เบิกเสา"); go.type = "button";
+      go.addEventListener("click", function(){ wz = { pile: "", key: "", sel: new Set(), booking: "", contractor: "" }; renderW(); });
+      box.appendChild(go);
+      if (!state.demand.length) box.appendChild(el("p", "status err", "ยังไม่มีข้อมูล WBS ให้ผู้ดูแลอัปไฟล์ผลลัพธ์ zcn52n ในแท็บ ผู้ดูแล"));
+      else box.appendChild(el("p", "note", "ข้อมูล WBS: " + state.importInfo));
+      runs.forEach(function(run){
+        var c = el("div", "card"), h = el("div", "card-head");
+        h.appendChild(el("h2", null, run.name));
+        var cnt = el("span", "count"); cnt.appendChild(document.createTextNode("คงเหลือ ")); cnt.appendChild(el("b", null, leftIn(run))); cnt.appendChild(document.createTextNode(" / " + run.poles.length + " ต้น"));
+        h.appendChild(cnt); c.appendChild(h);
+        var r = el("div", "row-actions"); r.appendChild(el("span", "pill type", typeDesc(run.mat))); c.appendChild(r);
+        box.appendChild(c);
+      });
+      if (!runs.length) box.appendChild(el("p", "empty", "ยังไม่มีกองเสา ให้ผู้ดูแลเพิ่มกองในแท็บ ผู้ดูแล"));
+      return;
+    }
+
+    if (!wz.pile) {                              // step 1: pile
+      box.appendChild(el("h2", "step", "1. เลือกกองเสา"));
+      runs.forEach(function(run){
+        var left = leftIn(run), b = el("button", "pilebtn"); b.type = "button";
+        b.appendChild(el("span", "nm", run.name));
+        b.appendChild(el("span", "left", left + " ต้น"));
+        b.appendChild(el("span", "sub", typeDesc(run.mat)));
+        if (left) b.addEventListener("click", function(){ choosePile(run.name); }); else b.disabled = true;
+        box.appendChild(b);
+      });
+      box.appendChild(el("p", "note", "หรือแตะกองเสาในภาพ 3D"));
+      var x = el("button", null, "ยกเลิก"); x.type = "button"; x.addEventListener("click", cancelW);
+      box.appendChild(x);
+      return;
+    }
+
+    var run = runOf(wz.pile), line = lineOf(wz.key);
+    $("modeText").textContent = "กำลังเบิกจากกอง " + run.name;
+    var card = el("section", "card active"), head = el("div", "card-head");
+    head.appendChild(el("h2", null, run.name));
+    var chg = el("button", "small", "เปลี่ยนกอง"); chg.type = "button";
+    chg.addEventListener("click", function(){ wz.pile = ""; wz.key = ""; wz.sel.clear(); frame(null); paint(); renderW(); });
+    head.appendChild(chg); card.appendChild(head);
+
+    var lw = el("label", "step", "2. เลือก WBS"); lw.htmlFor = "selWbs"; card.appendChild(lw);   // step 2: WBS
+    var lines = state.demand.filter(function(l){ return l.mat === run.mat && l.left > 0; });
+    if (!lines.length) card.appendChild(el("p", "status err", "ไม่มี WBS ที่จอง " + typeDesc(run.mat) + " ค้างเบิกในข้อมูลล่าสุด"));
+    else {
+      var sel = document.createElement("select"); sel.id = "selWbs";
+      var o0 = el("option", null, "เลือก WBS (" + lines.length + " รายการ)"); o0.value = ""; sel.appendChild(o0);
+      lines.forEach(function(l){
+        var o = el("option", null, l.wbs + " · เหลือ " + l.left + " ต้น · " + (l.job || "")); o.value = l.key; sel.appendChild(o);
+      });
+      sel.value = line ? wz.key : "";
+      sel.addEventListener("change", function(){
+        wz.key = sel.value; wz.sel.clear();
+        var l = lineOf(wz.key); wz.booking = l ? l.booking : ""; wz.contractor = l ? l.contractor : "";
+        paint(); renderW();
+      });
+      card.appendChild(sel);
+    }
+    if (line) {
+      var dl = el("dl", "kv");
+      [["ชื่องาน", line.job || "-"], ["โครงข่าย", line.net || "-"], ["เบิกได้อีก", line.left + " ต้น"]].forEach(function(kv){
+        dl.appendChild(el("dt", null, kv[0])); dl.appendChild(el("dd", null, kv[1]));
+      });
+      card.appendChild(dl);
+      var f = el("div", "fields");
+      [["actBooking", "เลขที่ใบจอง", "booking", 40], ["actContractor", "ผู้รับเหมา", "contractor", 120]].forEach(function(d){
+        var lb = el("label", null, d[1]); lb.htmlFor = d[0];
+        var inp = document.createElement("input"); inp.type = "text"; inp.id = d[0]; inp.value = wz[d[2]]; inp.maxLength = d[3];
+        inp.addEventListener("input", function(){ wz[d[2]] = inp.value; });
+        f.appendChild(lb); f.appendChild(inp);
+      });
+      card.appendChild(f);
+
+      var h3 = el("div", "card-head");                                                             // step 3: poles
+      h3.appendChild(el("h2", "step", "3. เลือกเสา"));
+      var cnt2 = el("span", "count"); cnt2.id = "actCount"; h3.appendChild(cnt2);
+      card.appendChild(h3);
+      card.appendChild(el("p", "note", "ติ๊กเลขเสา หรือแตะเสาในภาพ 3D"));
+      var list = el("div", "list");
+      run.poles.forEach(function(p){ if (!p.gone) list.appendChild(makeChip(p)); });
+      card.appendChild(list);
+      var s = el("div", "sel-list"); s.id = "actSel"; card.appendChild(s);
+
+      var fu = el("div", "fields"), lu = el("label", null, "ชื่อผู้เบิก"); lu.htmlFor = "actUser";
+      var iu = document.createElement("input"); iu.type = "text"; iu.id = "actUser"; iu.maxLength = 60; iu.value = lsGet("pole-user");
+      iu.placeholder = "พิมพ์ครั้งเดียว เครื่องนี้จะจำไว้"; iu.autocomplete = "name";
+      fu.appendChild(lu); fu.appendChild(iu); card.appendChild(fu);
+    }
+    var st = el("p", "status"); st.id = "actStatus"; st.setAttribute("role", "status"); card.appendChild(st);
+    var acts = el("div", "row-actions");
+    if (line) { var ok = el("button", "primary", "บันทึกการเบิก"); ok.type = "button"; ok.id = "actOk"; ok.addEventListener("click", saveW); acts.appendChild(ok); }
+    var cancel = el("button", null, "ยกเลิก"); cancel.type = "button"; cancel.addEventListener("click", cancelW);
+    acts.appendChild(cancel); card.appendChild(acts);
+    box.appendChild(card);
+    syncChips(); updateCount();
+  }
+  function cancelW(){ wz = null; frame(null); paint(); renderW(); }
+  function saveW(){
+    if (!wz || busy) return;
+    var st = $("actStatus"), user = $("actUser").value.trim(), n = wz.sel.size, line = lineOf(wz.key);
+    function err(t){ st.textContent = t; st.classList.add("err"); }
+    if (!user) { err("ใส่ชื่อผู้เบิกก่อนบันทึก"); $("actUser").focus(); return; }
+    if (!n || !line) return;
+    lsSet("pole-user", user);
+    st.classList.remove("err"); st.textContent = "กำลังบันทึก";
+    $("actOk").disabled = true;
+    var req = { action: "withdraw", user: user, pile: wz.pile, key: wz.key, labels: Array.from(wz.sel), booking: wz.booking, contractor: wz.contractor };
+    var wbs = line.wbs, keep = wz;
+    wz = null; justSaved = true;
+    request(req, true).then(function(){
+      frame(null); toast("บันทึกแล้ว เบิก " + n + " ต้น ให้ " + wbs);
+    }, function(e){
+      justSaved = false; wz = keep;
+      var run = runOf(wz.pile);
+      if (!run) { wz = null; renderW(); toast(e.message); return; }
+      wz.sel.forEach(function(l){ if (run.gone.has(l)) wz.sel.delete(l); });
+      paint(); renderW(); err(e.message);
+    });
+  }
+
+  /* ---------- history ---------- */
+  function pad(n){ return (n < 10 ? "0" : "") + n; }
+  function stamp(ts){ var d = new Date(ts); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()); }
+  function renderHistory(){
+    var box = $("history"); box.textContent = "";
+    if (!state.log.length) { box.appendChild(el("p", "empty", "ยังไม่มีรายการเบิก")); return; }
+    state.log.slice().reverse().forEach(function(e){
+      var card = el("section", "card entry"), head = el("div", "card-head");
+      head.appendChild(el("h2", null, e.wbs));
+      head.appendChild(el("time", null, stamp(e.ts)));
+      card.appendChild(head);
+      var dl = el("dl", "kv");
+      [["ชื่องาน", e.job || "-"], ["เสา", shortType(e.desc) + " · " + e.labels.length + " ต้น · กอง " + e.pile], ["ใบจอง", e.booking || "-"],
+       ["ผู้รับเหมา", e.contractor || "-"], ["ผู้เบิก", e.user || "-"]].forEach(function(kv){
+        dl.appendChild(el("dt", null, kv[0])); dl.appendChild(el("dd", null, kv[1]));
+      });
+      card.appendChild(dl);
+      card.appendChild(el("div", "labels", "เลขเสา " + e.labels.join(", ")));
+      var b = el("button", "small", "ยกเลิกรายการนี้ (ผู้ดูแล)"); b.type = "button";
+      twoStep(b, "ยกเลิกรายการนี้ (ผู้ดูแล)", function(){
+        if (!$("inAdmin").value) { toast("ใส่รหัสผู้ดูแลในแท็บ ผู้ดูแล ก่อน"); return; }
+        request({ action: "undo", id: e.id, admin: $("inAdmin").value }).then(function(){ toast("ยกเลิกรายการแล้ว เสากลับเข้ากอง"); }, function(){});
+      });
+      var a = el("div", "row-actions"); a.appendChild(b); card.appendChild(a);
+      box.appendChild(card);
+    });
+  }
+
+  /* ---------- admin ---------- */
+  function adminCode(){ var v = $("inAdmin").value; if (!v) toast("ใส่รหัสผู้ดูแลก่อน"); return v; }
+  function renderAdmin(){
+    $("impInfo").textContent = state.demand.length
+      ? "ไฟล์ล่าสุด: " + state.importInfo + " · " + state.demand.length + " รายการ"
+      : "ยังไม่มีข้อมูล WBS";
+    pilesAdminEl.textContent = "";
+    runs.forEach(function(run){
+      var c = el("div", "card"), h = el("div", "card-head");
+      h.appendChild(el("h2", null, run.name));
+      h.appendChild(el("span", "count", leftIn(run) + " / " + run.poles.length + " ต้น"));
+      c.appendChild(h);
+      var r = el("div", "row-actions");
+      r.appendChild(el("span", "pill type", typeDesc(run.mat)));
+      var b = el("button", "small", "ลบกองนี้"); b.type = "button";
+      twoStep(b, "ลบกองนี้", function(){
+        var code = adminCode(); if (!code) return;
+        request({ action: "deletePile", name: run.name, admin: code }).then(function(){ toast("ลบกอง " + run.name + " แล้ว"); }, function(){});
+      });
+      r.appendChild(b); c.appendChild(r);
+      pilesAdminEl.appendChild(c);
+    });
+  }
+  function fillTypes(){
+    var sel = $("inType"), keep = sel.value, sig = Object.keys(types).sort().join(",");
+    if (sel._sig === sig) return;
+    sel._sig = sig; sel.textContent = "";
+    Object.keys(types).sort().forEach(function(mat){
+      var o = el("option", null, typeDesc(mat) + " (" + mat + ")"); o.value = mat; sel.appendChild(o);
+    });
+    if (keep && types[keep]) sel.value = keep;
+  }
+  $("inXlsx").addEventListener("change", function(){
+    var file = this.files && this.files[0];
+    this.value = "";
+    if (!file) return;
+    var st = $("impStatus");
+    function fail(t){ st.textContent = t; st.classList.add("err"); }
+    var code = $("inAdmin").value;
+    if (!code) { fail("ใส่รหัสผู้ดูแลก่อนอัปไฟล์"); return; }
+    if (!window.XLSX) { fail("โหลดตัวอ่านไฟล์ Excel ไม่สำเร็จ ลองเปิดหน้านี้ใหม่"); return; }
+    st.classList.remove("err"); st.textContent = "กำลังอ่านไฟล์";
+    file.arrayBuffer().then(function(buf){
+      var wb = XLSX.read(buf, { type: "array" }), sheets = {};
+      wb.SheetNames.forEach(function(n){ sheets[n] = XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: true, defval: "" }); });
+      var res = parseDemand(sheets);
+      if (res.error) { fail(res.error); return; }
+      if (!res.lines.length) { fail("อ่านแท็บ " + res.sheet + " ได้ แต่ไม่พบรายการเสาที่มีคงเหลือมากกว่า 0"); return; }
+      var total = res.lines.reduce(function(a, l){ return a + l.remain; }, 0);
+      st.textContent = "กำลังส่งขึ้นฐานข้อมูล";
+      return request({ action: "upload", admin: code, lines: res.lines, info: file.name }, true).then(function(){
+        st.textContent = "อัปแล้ว " + res.lines.length + " รายการ รวม " + total + " ต้น ช่างทุกคนจะเห็นข้อมูลชุดนี้";
+      }, function(e){ fail(e.message); });
+    }, function(){ fail("เปิดไฟล์นี้ไม่ได้ ตรวจว่าเป็นไฟล์ .xlsx ที่ได้จากเครื่องมือ runequipment"); });
+  });
+
+  function setStatus(text, err){ statusEl.textContent = text || ""; statusEl.classList.toggle("err", !!err); }
+  // Several lines: each line is a layer, top line = top layer. One line: wrap by poles per layer.
+  function parseRows(text, per){
+    var lines = text.split(/\r?\n/).map(function(l){ return l.split(/[\s,;|]+/).filter(Boolean); }).filter(function(l){ return l.length; });
+    if (!lines.length) return { rows: [], dup: 0 };
+    var rows = lines.length > 1 ? lines.reverse() : chunk(lines[0], per);
+    var seen = new Set(), dup = 0;
+    rows = rows.map(function(r){
+      return r.map(function(v){ return v.slice(0, 16); }).filter(function(v){ if (seen.has(v)) { dup++; return false; } seen.add(v); return true; });
+    }).filter(function(r){ return r.length; });
+    return { rows: rows, dup: dup };
+  }
+  $("btnFill").addEventListener("click", function(){
+    var n = Math.round(clamp($("inCount").value, 1, 200, 12)), s = Math.round(clamp($("inStart").value, 0, 999999, 1));
+    $("inNums").value = seq(n, s).join(" ");
+    setStatus("เติมเลข " + s + " ถึง " + (s + n - 1) + " แล้ว กดสร้างกองเสาได้เลย");
+  });
+  $("btnAdd").addEventListener("click", function(){
+    var per = Math.round(clamp($("inPer").value, 1, 20, 6));
+    var parsed = parseRows($("inNums").value, per);
+    var n = parsed.rows.reduce(function(a, r){ return a + r.length; }, 0);
+    if (!$("inAdmin").value) { setStatus("ใส่รหัสผู้ดูแลก่อนสร้างกอง", true); return; }
+    if (!n) { setStatus("ยังไม่มีเลขเสา พิมพ์เลข หรือเติมเลขเรียงก่อน", true); return; }
+    if (n > 300) { setStatus("กองหนึ่งใส่ได้ไม่เกิน 300 ต้น ตอนนี้มี " + n + " ต้น แบ่งเป็นหลายกองได้", true); return; }
+    if (parsed.rows.some(function(r){ return r.length > 30; })) { setStatus("ชั้นหนึ่งมีเกิน 30 ต้น ลองขึ้นบรรทัดใหม่เพื่อแบ่งชั้น", true); return; }
+    var mat = $("inType").value;
+    var name = $("inName").value.trim() || ("เสา " + lenOf(types[mat]) + " ม.");
+    setStatus("กำลังบันทึก");
+    request({ action: "addPile", admin: $("inAdmin").value, name: name, mat: mat, rows: parsed.rows }, true).then(function(){
+      $("inNums").value = ""; $("inName").value = "";
+      setStatus("สร้างกอง " + name + " แล้ว " + n + " ต้น" + (parsed.dup ? " (ตัดเลขซ้ำออก " + parsed.dup + " รายการ)" : ""));
+    }, function(e){ setStatus(e.message, true); });
+  });
+  $("inSettle").checked = settle;
+  $("inSettle").addEventListener("change", function(){ settle = this.checked; lsSet("pole-settle", settle ? "1" : "0"); layout(false); });
+
+  /* ---------- tabs ---------- */
+  var TABS = ["w", "h", "a"];
+  function showTab(id){
+    TABS.forEach(function(t){
+      $("tab-" + t).setAttribute("aria-selected", t === id ? "true" : "false");
+      $("pan-" + t).hidden = t !== id;
+    });
+  }
+  TABS.forEach(function(t){ $("tab-" + t).addEventListener("click", function(){ showTab(t); }); });
+
+  /* ---------- pointer picking ---------- */
+  function pick(ev){
+    var r = three.renderer.domElement.getBoundingClientRect();
+    three.ptr.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+    three.ray.setFromCamera(three.ptr, three.camera);
+    var targets = poles.filter(function(p){ return !p.gone; }).map(function(p){ return p.mesh; });
+    var hit = three.ray.intersectObjects(targets, false)[0];
+    return hit ? hit.object.userData.pole : null;
+  }
+  function bindPointer(){
+    var cv = three.renderer.domElement, down = null;
+    cv.addEventListener("pointerdown", function(ev){ down = { x: ev.clientX, y: ev.clientY }; });
+    cv.addEventListener("pointerup", function(ev){
+      if (!down) return;
+      var moved = Math.hypot(ev.clientX - down.x, ev.clientY - down.y);
+      down = null;
+      if (moved > 6) return;
+      var p = pick(ev);
+      if (p) { showTab("w"); clickPole(p); }
+    });
+    cv.addEventListener("pointermove", function(ev){
+      if (ev.pointerType === "touch" || ev.buttons) { tip.style.display = "none"; return; }
+      var p = pick(ev);
+      setHot(p);
+      cv.style.cursor = p ? "pointer" : "grab";
+      if (p) {
+        var r = stage.getBoundingClientRect();
+        tip.textContent = p.run.name + " · เสาเลข " + p.label;
+        tip.style.left = (ev.clientX - r.left) + "px";
+        tip.style.top = (ev.clientY - r.top) + "px";
+        tip.style.display = "block";
+      } else tip.style.display = "none";
+    });
+    cv.addEventListener("pointerleave", function(){ setHot(null); tip.style.display = "none"; });
+  }
+  function resize(){
+    if (!three) return;
+    var w = stage.clientWidth, h = stage.clientHeight;
+    if (!w || !h) return;
+    three.renderer.setSize(w, h, false);
+    three.camera.aspect = w / h;
+    three.camera.updateProjectionMatrix();
+  }
+  function tick(){
+    requestAnimationFrame(tick);
+    for (var i = 0; i < poles.length; i++) {
+      var p = poles[i], target = p.gone ? 0 : 1;
+      if (Math.abs(p.alpha - target) > 0.001 || Math.abs(p.group.position.y - p.ty) > 0.0005) {
+        p.alpha += (target - p.alpha) * 0.14;
+        if (Math.abs(p.alpha - target) < 0.01) p.alpha = target;
+        p.group.position.y += (p.ty - p.group.position.y) * 0.14;
+        applyAlpha(p);
+      }
+    }
+    if (three.controls) three.controls.update();
+    three.renderer.render(three.scene, three.camera);
+  }
+
+  /* ---------- start ---------- */
+  three = initThree();
+  if (!three) $("msg").style.display = "flex";
+  setConn(); fillTypes(); renderW(); renderHistory(); renderAdmin();
+  if (three) {
+    three.maxLen = 9; three.totalW = 0; three.maxH = 0;
+    applySceneTheme(); bindPointer(); resize(); frame(null);
+    if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
+    window.addEventListener("resize", resize);
+    if (window.matchMedia) {
+      var mq = window.matchMedia("(prefers-color-scheme: dark)");
+      if (mq.addEventListener) mq.addEventListener("change", applySceneTheme);
+    }
+    if (document.fonts && document.fonts.load) {
+      document.fonts.load("700 78px 'Chakra Petch'").then(function(){
+        poles.forEach(function(p){ if (p.mats[1]) { p.mats[1].map.dispose(); p.mats[1].map = labelTexture(p.label); p.mats[1].needsUpdate = true; } });
+        runs.forEach(function(run){ if (run.sign) { run.sign.material.map.dispose(); run.sign.material.map = signTexture(run.name); run.sign.material.needsUpdate = true; } });
+      }).catch(function(){});
+    }
+    tick();
+  }
+  function reload(){ if (!busy) request({ action: "state" }, true).catch(function(){ if (!loaded) { $("pan-w").textContent = ""; $("pan-w").appendChild(el("p", "status err", "โหลดข้อมูลไม่ได้ ตรวจ URL ของ Apps Script และอินเทอร์เน็ต แล้วเปิดหน้านี้ใหม่")); } }); }
+  reload();
+  // pick up other people's withdrawals and new WBS uploads
+  setInterval(function(){ if (!document.hidden) reload(); }, 20000);
+  document.addEventListener("visibilitychange", function(){ if (!document.hidden) reload(); });
+})();
+</script>
+</body>
+</html>
