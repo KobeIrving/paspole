@@ -400,6 +400,7 @@ details.edit .fields{margin-top:6px}
   /* ---------- backend: Google Sheet through Apps Script, or a local trial copy ---------- */
   var API = (typeof API_URL === "string" && API_URL.trim()) || "";
   var LOCAL_KEY = "pole-pile-local-v1";
+  var COARSE = !!(window.matchMedia && window.matchMedia("(pointer:coarse)").matches);   // finger, not mouse
   var UNDO_MS = 10 * 60000;                     // the person who withdrew can cancel poles themselves this long
   function mineIds(){ try { return JSON.parse(lsGet("pole-mine") || "[]"); } catch (e) { return []; } }
   function addMine(id){ var m = mineIds().filter(function(x){ return x !== id; }); m.push(id); lsSet("pole-mine", JSON.stringify(m.slice(-30))); }
@@ -581,6 +582,16 @@ details.edit .fields{margin-top:6px}
       controls.maxPolarAngle = Math.PI / 2 - 0.03;
       controls.minDistance = 2;
       controls.maxDistance = 120;
+      if (COARSE) {
+        // fingers: slower turning, the view stops soon after the finger lifts, two fingers zoom and turn but never slide the yard away
+        controls.rotateSpeed = 0.45;
+        controls.zoomSpeed = 0.7;
+        controls.dampingFactor = 0.25;
+        controls.enablePan = false;
+        controls.minPolarAngle = 0.25;
+        controls.maxPolarAngle = Math.PI / 2 - 0.12;
+        if (THREE.TOUCH && THREE.TOUCH.DOLLY_ROTATE !== undefined) controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_ROTATE };
+      } else controls.dampingFactor = 0.12;
     }
     var yard = new THREE.Group();
     scene.add(yard);
@@ -1611,23 +1622,45 @@ details.edit .fields{margin-top:6px}
   TABS.forEach(function(t){ $("tab-" + t).addEventListener("click", function(){ showTab(t); }); });
 
   /* ---------- pointer picking ---------- */
-  function pick(ev){
+  function pickAt(x, y){
     var r = three.renderer.domElement.getBoundingClientRect();
-    three.ptr.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+    three.ptr.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
     three.ray.setFromCamera(three.ptr, three.camera);
     var targets = poles.filter(function(p){ return !p.gone; }).map(function(p){ return p.mesh; });
     var hit = three.ray.intersectObjects(targets, false)[0];
     return hit ? hit.object.userData.pole : null;
   }
+  function pick(ev){ return pickAt(ev.clientX, ev.clientY); }
+  // a fingertip is wide: if nothing is right under it, look a little around it, nearest ring first
+  function pickNear(x, y){
+    var p = pickAt(x, y);
+    if (p || !COARSE) return p;
+    var rings = [9, 16], steps = 8;
+    for (var i = 0; i < rings.length; i++) for (var k = 0; k < steps; k++) {
+      var a = k / steps * Math.PI * 2;
+      p = pickAt(x + Math.cos(a) * rings[i], y + Math.sin(a) * rings[i]);
+      if (p) return p;
+    }
+    return null;
+  }
   function bindPointer(){
-    var cv = three.renderer.domElement, down = null;
-    cv.addEventListener("pointerdown", function(ev){ down = { x: ev.clientX, y: ev.clientY }; });
+    var cv = three.renderer.domElement, down = null, fingers = 0;
+    var SLOP = COARSE ? 14 : 6;                 // how far a tap may wander before it counts as a drag
+    cv.addEventListener("pointerdown", function(ev){
+      fingers++;
+      if (fingers > 1) { if (down) down.multi = true; return; }
+      // remember which pole was under the finger when it landed: the view may still be gliding at lift-off
+      down = { x: ev.clientX, y: ev.clientY, t: Date.now(), pole: moving ? null : pickNear(ev.clientX, ev.clientY), multi: false };
+    });
+    function lift(){ fingers = Math.max(0, fingers - 1); }
+    cv.addEventListener("pointercancel", function(){ lift(); down = null; });
     cv.addEventListener("pointerup", function(ev){
+      lift();
       if (!down) return;
-      var moved = Math.hypot(ev.clientX - down.x, ev.clientY - down.y);
-      down = null;
-      if (moved > 6) return;
-      var p = pick(ev);
+      var d = down; if (fingers === 0) down = null;
+      if (d.multi || Date.now() - d.t > 600) return;
+      if (Math.hypot(ev.clientX - d.x, ev.clientY - d.y) > SLOP) return;
+      var p = d.pole || pickNear(ev.clientX, ev.clientY);
       if (p && !moving) { showTab("w"); clickPole(p); }
     });
     cv.addEventListener("pointermove", function(ev){
