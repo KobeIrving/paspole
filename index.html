@@ -165,6 +165,13 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
         <p class="status" id="impStatus" role="status"></p>
         <hr>
         <h3>กองเสา</h3>
+        <div class="row-actions">
+          <button type="button" id="btnMove">ย้ายกองเสา</button>
+          <button type="button" class="primary" id="btnMoveSave" hidden>บันทึกตำแหน่ง</button>
+          <button type="button" id="btnMoveCancel" hidden>ยกเลิก</button>
+          <button type="button" id="btnMoveAuto" hidden>เรียงอัตโนมัติ</button>
+        </div>
+        <p class="status" id="moveStatus" role="status"></p>
         <div id="pilesAdmin" class="col"></div>
         <div class="card">
           <h2>เพิ่มกองเสา</h2>
@@ -310,6 +317,12 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
       } else if (a === "deletePile") {
         admin();
         db.piles = db.piles.filter(function(p){ return p.name !== req.name; });
+      } else if (a === "setPositions") {
+        admin();
+        db.piles.forEach(function(p){
+          if (req.clear) { p.pos = null; return; }
+          (req.positions || []).forEach(function(q){ if (q.name === p.name) p.pos = { x: Number(q.x), z: Number(q.z) }; });
+        });
       } else if (a === "checkAdmin") admin();
       return { ok: true, state: view() };
     } catch (err) { return { ok: false, error: String(err.message || err) }; }
@@ -461,11 +474,14 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
     var x = -totalW / 2;
     runs.forEach(function(run){
       var len = run.len;
-      run.cx = x + run.width / 2;
+      run.px = x + run.width / 2;               // lined up in a row unless the admin has placed the pile
+      run.pz = (maxLen - len) / 2;              // butt ends of every pile line up at the front
       x += run.width + GAP;
+      var d0 = state.piles[runs.indexOf(run)];
+      if (d0.pos) { run.px = d0.pos.x; run.pz = d0.pos.z; }
       if (three) {
         run.root = new THREE.Group();
-        run.root.position.set(run.cx, 0, (maxLen - len) / 2); // butt ends of every pile line up at the front
+        run.root.position.set(run.px, 0, run.pz);
         three.yard.add(run.root);
         var k = Math.SQRT1_2;
         run.geo = new THREE.CylinderGeometry(run.S * k, run.S * 0.62 * k, len, 4, 1);
@@ -513,22 +529,33 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
       });
     });
     if (three) {
-      three.maxLen = maxLen; three.totalW = totalW; three.maxH = maxH;
-      var sc = three.sun.shadow.camera, ext = Math.max(10, totalW / 2 + maxLen / 2 + 2);
+      measure();
+      var b = three.box, sc = three.sun.shadow.camera;
+      var ext = Math.max(10, Math.abs(b.cx) + b.w / 2 + 2, Math.abs(b.cz) + b.d / 2 + 2);
       sc.left = -ext; sc.right = ext; sc.top = ext; sc.bottom = -ext; sc.near = 1; sc.far = 80;
       sc.updateProjectionMatrix();
       if (three.framedFor !== runs.length) { three.framedFor = runs.length; frame(null); }
     }
     layout(true);
   }
+  // bounding box of the whole yard
+  function measure(){
+    var x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, hh = 0;
+    runs.forEach(function(r){
+      x0 = Math.min(x0, r.px - r.width / 2); x1 = Math.max(x1, r.px + r.width / 2);
+      z0 = Math.min(z0, r.pz - r.len / 2);   z1 = Math.max(z1, r.pz + r.len / 2);
+      hh = Math.max(hh, r.height);
+    });
+    three.box = runs.length ? { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, w: x1 - x0, d: z1 - z0, h: hh } : { cx: 0, cz: 0, w: 0, d: 9, h: 0 };
+  }
   // aim the camera at one pile, or at the whole yard
   function frame(run){
     if (!three) return;
-    var w = run ? run.width : three.totalW, cx = run ? run.cx : 0, h = run ? run.height : three.maxH;
-    var d = Math.max(run ? 7 : 11, w * 0.9 + three.maxLen * 0.55);
-    three.camera.position.set(cx + d * 0.42, d * 0.3, three.maxLen / 2 + d * 0.72);
-    if (three.controls) { three.controls.target.set(cx, h / 2, 0); three.controls.update(); }
-    else three.camera.lookAt(cx, h / 2, 0);
+    var b = run ? { cx: run.px, cz: run.pz, w: run.width, d: run.len, h: run.height } : three.box;
+    var d = Math.max(run ? 7 : 11, b.w * 0.9 + b.d * 0.55);
+    three.camera.position.set(b.cx + d * 0.42, d * 0.3, b.cz + b.d / 2 + d * 0.72);
+    if (three.controls) { three.controls.target.set(b.cx, b.h / 2, b.cz); three.controls.update(); }
+    else three.camera.lookAt(b.cx, b.h / 2, b.cz);
   }
   function layout(snap){
     runs.forEach(function(run){
@@ -563,7 +590,7 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
   function applyState(s){
     state = s;
     state.demand.forEach(function(l){ if (l.mat && l.desc) types[l.mat] = l.desc; });
-    var sig = JSON.stringify(state.piles.map(function(p){ return [p.name, p.mat, p.rows]; }));
+    var sig = JSON.stringify(state.piles.map(function(p){ return [p.name, p.mat, p.rows, p.pos || 0]; }));
     var rebuilt = sig !== pileSig;
     if (rebuilt) { pileSig = sig; build(); }
     else {
@@ -674,12 +701,13 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
 
   function renderW(){
     var box = $("pan-w"); box.textContent = "";
-    $("mode").style.display = wz && wz.pile ? "block" : "none";
+    $("mode").style.display = moving || (wz && wz.pile) ? "block" : "none";
+    if (moving) $("modeText").textContent = "โหมดย้ายกอง ลากกองเสาไปวางตำแหน่งใหม่";
     if (!loaded) { box.appendChild(el("p", "empty", "กำลังโหลดข้อมูล")); return; }
 
     if (!wz) {                                   // start screen
       var go = el("button", "primary big", "เบิกเสา"); go.type = "button";
-      go.addEventListener("click", function(){ wz = { pile: "", key: "", sel: new Set(), booking: "", contractor: "" }; renderW(); });
+      go.addEventListener("click", function(){ if (moving) { toast("กำลังย้ายกองอยู่ บันทึกหรือยกเลิกในแท็บ ผู้ดูแล ก่อน"); return; } wz = { pile: "", key: "", sel: new Set(), booking: "", contractor: "" }; renderW(); });
       box.appendChild(go);
       if (!state.demand.length) box.appendChild(el("p", "status err", "ยังไม่มีข้อมูล WBS ให้ผู้ดูแลอัปไฟล์ผลลัพธ์ zcn52n ในแท็บ ผู้ดูแล"));
       else box.appendChild(el("p", "note", "ข้อมูล WBS: " + state.importInfo));
@@ -712,7 +740,7 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
     }
 
     var run = runOf(wz.pile), line = lineOf(wz.key);
-    $("modeText").textContent = "กำลังเบิกจากกอง " + run.name;
+    if (!moving) $("modeText").textContent = "กำลังเบิกจากกอง " + run.name;
     var card = el("section", "card active"), head = el("div", "card-head");
     head.appendChild(el("h2", null, run.name));
     var chg = el("button", "small", "เปลี่ยนกอง"); chg.type = "button";
@@ -999,6 +1027,87 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
   $("inSettle").checked = settle;
   $("inSettle").addEventListener("change", function(){ settle = this.checked; lsSet("pole-settle", settle ? "1" : "0"); layout(false); });
 
+  /* ---------- admin: move piles around the yard ---------- */
+  var moving = false, moved = {}, drag = null;
+  function moveUi(text, err){
+    $("btnMove").hidden = moving; $("btnMoveSave").hidden = !moving; $("btnMoveCancel").hidden = !moving; $("btnMoveAuto").hidden = !moving;
+    var st = $("moveStatus"); st.textContent = text || ""; st.classList.toggle("err", !!err);
+    renderW();
+  }
+  $("btnMove").addEventListener("click", function(){
+    var code = $("inAdmin").value;
+    if (!code) { moveUi("ใส่รหัสผู้ดูแลก่อนย้ายกอง", true); return; }
+    if (!three) { moveUi("อุปกรณ์นี้เปิดภาพ 3D ไม่ได้ จึงย้ายกองไม่ได้", true); return; }
+    request({ action: "checkAdmin", admin: code }, true).then(function(){
+      wz = null; moving = true; moved = {}; frame(null); paint();
+      moveUi("ลากกองเสาในภาพ 3D ไปวางตำแหน่งใหม่ กองจะดูดเข้าชิดกองข้างเคียงเมื่อเข้าใกล้ แล้วกดบันทึกตำแหน่ง");
+    }, function(e){ moveUi(e.message, true); });
+  });
+  function endMove(text, err){ moving = false; moved = {}; drag = null; if (three.controls) three.controls.enabled = true; moveUi(text, err); }
+  $("btnMoveCancel").addEventListener("click", function(){ pileSig = null; endMove(""); reload(); });
+  $("btnMoveSave").addEventListener("click", function(){
+    var list = Object.keys(moved).map(function(n){ return { name: n, x: moved[n].x, z: moved[n].z }; });
+    if (!list.length) { endMove("ไม่มีกองที่ถูกย้าย"); return; }
+    moveUi("กำลังบันทึก");
+    request({ action: "setPositions", admin: $("inAdmin").value, positions: list }, true).then(function(){
+      endMove("บันทึกตำแหน่งแล้ว " + list.length + " กอง ทุกเครื่องจะเห็นตำแหน่งใหม่");
+    }, function(e){ moveUi(e.message, true); });
+  });
+  twoStep($("btnMoveAuto"), "เรียงอัตโนมัติ", function(){
+    request({ action: "setPositions", admin: $("inAdmin").value, clear: true }, true).then(function(){
+      endMove("กลับไปเรียงกองเป็นแถวอัตโนมัติแล้ว"); frame(null);
+    }, function(e){ moveUi(e.message, true); });
+  });
+  function groundPoint(ev){
+    var r = three.renderer.domElement.getBoundingClientRect();
+    three.ptr.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+    three.ray.setFromCamera(three.ptr, three.camera);
+    var out = new THREE.Vector3();
+    return three.ray.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 1, 0), 0), out) ? out : null;
+  }
+  /*SNAP-START*/
+  // pull a dragged pile flush against a neighbour: side by side, end to end, and butt ends in line
+  function snapPile(run, x, z, others){
+    var hw = run.width / 2, hl = run.len / 2, NEAR = 0.6, SIDE = 0.15, END = 0.3;
+    others.forEach(function(o){
+      var ow = o.width / 2, ol = o.len / 2;
+      var zOverlap = z - hl < o.pz + ol && z + hl > o.pz - ol, xOverlap = x - hw < o.px + ow && x + hw > o.px - ow;
+      if (zOverlap) {
+        if (Math.abs((x - hw) - (o.px + ow) - SIDE) < NEAR) x = o.px + ow + SIDE + hw;
+        else if (Math.abs((o.px - ow) - (x + hw) - SIDE) < NEAR) x = o.px - ow - SIDE - hw;
+        if (Math.abs((z + hl) - (o.pz + ol)) < NEAR) z = o.pz + ol - hl;
+      }
+      if (xOverlap) {
+        if (Math.abs((z - hl) - (o.pz + ol) - END) < NEAR) z = o.pz + ol + END + hl;
+        else if (Math.abs((o.pz - ol) - (z + hl) - END) < NEAR) z = o.pz - ol - END - hl;
+      }
+    });
+    return { x: Math.round(x * 20) / 20, z: Math.round(z * 20) / 20 };
+  }
+  /*SNAP-END*/
+  function bindMove(){
+    // capture on the parent so a pile drag never reaches the camera controls
+    stage.addEventListener("pointerdown", function(ev){
+      if (!moving || ev.target !== three.renderer.domElement) return;
+      var p = pick(ev), g = p && groundPoint(ev);
+      if (!p || !g) return;
+      ev.stopPropagation(); ev.preventDefault();
+      drag = { run: p.run, dx: p.run.px - g.x, dz: p.run.pz - g.z };
+      tip.style.display = "none";
+    }, true);
+    window.addEventListener("pointermove", function(ev){
+      if (!drag) return;
+      var g = groundPoint(ev); if (!g) return;
+      var s = snapPile(drag.run, g.x + drag.dx, g.z + drag.dz, runs.filter(function(r){ return r !== drag.run; }));
+      drag.run.px = s.x; drag.run.pz = s.z;
+      drag.run.root.position.set(s.x, 0, s.z);
+      moved[drag.run.name] = s;
+    });
+    function drop(){ if (drag) { drag = null; measure(); var n = Object.keys(moved).length; if (n) $("moveStatus").textContent = "ย้ายแล้ว " + n + " กอง ยังไม่ได้บันทึก"; } }
+    window.addEventListener("pointerup", drop);
+    window.addEventListener("pointercancel", drop);
+  }
+
   /* ---------- tabs ---------- */
   var TABS = ["w", "h", "a"];
   function showTab(id){
@@ -1027,7 +1136,7 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
       down = null;
       if (moved > 6) return;
       var p = pick(ev);
-      if (p) { showTab("w"); clickPole(p); }
+      if (p && !moving) { showTab("w"); clickPole(p); }
     });
     cv.addEventListener("pointermove", function(ev){
       if (ev.pointerType === "touch" || ev.buttons) { tip.style.display = "none"; return; }
@@ -1072,8 +1181,8 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
   if (!three) $("msg").style.display = "flex";
   setConn(); fillTypes(); renderW(); renderHistory(); renderAdmin();
   if (three) {
-    three.maxLen = 9; three.totalW = 0; three.maxH = 0;
-    applySceneTheme(); bindPointer(); resize(); frame(null);
+    three.box = { cx: 0, cz: 0, w: 0, d: 9, h: 0 };
+    applySceneTheme(); bindPointer(); bindMove(); resize(); frame(null);
     if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
     window.addEventListener("resize", resize);
     if (window.matchMedia) {
@@ -1088,7 +1197,7 @@ hr{border:0;border-top:1px solid var(--line);margin:2px 0;width:100%}
     }
     tick();
   }
-  function reload(){ if (!busy) request({ action: "state" }, true).catch(function(){ if (!loaded) { $("pan-w").textContent = ""; $("pan-w").appendChild(el("p", "status err", "โหลดข้อมูลไม่ได้ ตรวจ URL ของ Apps Script และอินเทอร์เน็ต แล้วเปิดหน้านี้ใหม่")); } }); }
+  function reload(){ if (!busy && !moving) request({ action: "state" }, true).catch(function(){ if (!loaded) { $("pan-w").textContent = ""; $("pan-w").appendChild(el("p", "status err", "โหลดข้อมูลไม่ได้ ตรวจ URL ของ Apps Script และอินเทอร์เน็ต แล้วเปิดหน้านี้ใหม่")); } }); }
   reload();
   // pick up other people's withdrawals and new WBS uploads
   setInterval(function(){ if (!document.hidden) reload(); }, 20000);
