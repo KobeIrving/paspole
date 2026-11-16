@@ -26,7 +26,7 @@ var API_URL = "https://script.google.com/macros/s/AKfycbwcn-K91DCJqq7T0dNRDEhegI
 :root{
   --bg:#eef0ee; --panel:#ffffff; --ink:#1d2327; --muted:#667079; --line:#d5dad8;
   --accent:#d9580b; --accent-ink:#ffffff; --accent-soft:#fdeee3; --gone:#9aa3a8;
-  --scene-sky:#dfe6e8; --scene-ground:#a9ad9f;
+  --scene-sky:#6f9bd0; --scene-ground:#5d7d42; --scene-tint:#ffffff;
   --font-display:"Chakra Petch","IBM Plex Sans Thai",system-ui,sans-serif;
   --font-body:"IBM Plex Sans Thai",system-ui,-apple-system,"Segoe UI",sans-serif;
   color-scheme:light;
@@ -35,7 +35,7 @@ var API_URL = "https://script.google.com/macros/s/AKfycbwcn-K91DCJqq7T0dNRDEhegI
   :root{
     --bg:#14181a;--panel:#1c2225;--ink:#e8ecec;--muted:#98a3a8;--line:#30393d;
     --accent:#ff8a3d;--accent-ink:#1b1206;--accent-soft:#3a2616;--gone:#5d676c;
-    --scene-sky:#1f282c;--scene-ground:#3b4039;
+    --scene-sky:#1b2a3d;--scene-ground:#2f3f2a;--scene-tint:#4a5566;
     color-scheme:dark;
   }
 }
@@ -45,7 +45,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-siz
 .app{height:100%;display:grid;grid-template-columns:minmax(0,1fr) 390px}
 .stage{position:relative;min-height:0;min-width:0;overflow:hidden;background:var(--scene-sky)}
 .stage canvas{display:block;width:100%;height:100%;touch-action:none}
-.hint{position:absolute;left:16px;bottom:14px;right:130px;font-size:13px;color:var(--ink);opacity:.75;pointer-events:none}
+.hint{position:absolute;left:12px;bottom:12px;max-width:calc(100% - 150px);font-size:13px;color:var(--ink);background:var(--panel);opacity:.85;padding:3px 8px;border-radius:6px;pointer-events:none}
 .viewbtn{position:absolute;right:12px;bottom:10px;z-index:2;background:var(--panel);font-size:13px;font-weight:600;padding:6px 12px;box-shadow:0 1px 4px rgba(0,0,0,.18)}
 .tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--panel);font-family:var(--font-display);font-weight:600;
   padding:4px 10px;border-radius:6px;font-size:14px;transform:translate(-50%,-140%);white-space:nowrap;display:none}
@@ -659,17 +659,22 @@ details.edit .fields{margin-top:6px}
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
     scene.add(sun);
-    var ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), new THREE.MeshStandardMaterial({ color: 0xa9ad9f, roughness: 1 }));
+    var ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), new THREE.MeshStandardMaterial({ color: 0x5d7d42, roughness: 1 }));
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene.add(ground);
+    var backdrop = new THREE.Mesh(new THREE.CylinderGeometry(140, 140, 60, 72, 1, true),
+      new THREE.MeshBasicMaterial({ map: mountainTexture(), side: THREE.BackSide, fog: false, depthWrite: false }));
+    backdrop.position.y = 28;                       // bottom edge just under the ground, so no gap shows
+    backdrop.renderOrder = -1;
+    scene.add(backdrop);
     var controls = null;
     if (THREE.OrbitControls) {
       controls = new THREE.OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.maxPolarAngle = Math.PI / 2 - 0.03;
       controls.minDistance = 2;
-      controls.maxDistance = 120;
+      controls.maxDistance = 100;                    // stay inside the mountain backdrop
       if (COARSE) {
         // fingers: slower turning, the view stops soon after the finger lifts; two fingers zoom and slide
         // (sliding is held inside the yard by clampView, so the piles never drift away)
@@ -688,16 +693,86 @@ details.edit .fields{margin-top:6px}
     }
     var yard = new THREE.Group();
     scene.add(yard);
-    return { renderer: renderer, scene: scene, camera: camera, controls: controls, ground: ground, yard: yard, sun: sun,
+    return { renderer: renderer, scene: scene, camera: camera, controls: controls, ground: ground, backdrop: backdrop, yard: yard, sun: sun,
              batMat: new THREE.MeshStandardMaterial({ color: 0x8a6a45, roughness: 1 }),
              ray: new THREE.Raycaster(), ptr: new THREE.Vector2(), framedFor: -1 };
   }
+  // a painted 360° view: blue sky, a snowy range far away, a bluish range nearer, green hills in front.
+  // Drawn once on a canvas; every wave has a whole number of cycles round the circle so the picture joins up seamlessly.
+  function mountainTexture(){
+    var W = 4096, H = 1024, HOR = H - 34, c = document.createElement("canvas"); c.width = W; c.height = H;
+    var g = c.getContext("2d"), seed = 11;
+    function rnd(){ seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+    function wave(parts){                        // smooth wiggle 0..1 that joins up round the circle
+      var w = parts.map(function(q){ return { k: q[0], a: q[1], ph: rnd() * 6.283 }; }), o = new Float32Array(W), lo = 1e9, hi = -1e9, x;
+      for (x = 0; x < W; x++) { var t = x / W * 6.283, v = 0; w.forEach(function(q){ v += q.a * Math.sin(q.k * t + q.ph); }); o[x] = v; lo = Math.min(lo, v); hi = Math.max(hi, v); }
+      for (x = 0; x < W; x++) o[x] = (o[x] - lo) / (hi - lo);
+      return o;
+    }
+    // a range = many pointed peaks; each column keeps the highest peak over it, and which side of that peak it is on
+    function range(n, hMin, hMax, wMin, wMax){
+      var peaks = [], i, x;
+      for (i = 0; i < n; i++) peaks.push({ x: rnd() * W, h: hMin + rnd() * (hMax - hMin), wl: wMin + rnd() * (wMax - wMin), wr: wMin + rnd() * (wMax - wMin) });
+      var hh = new Float32Array(W), side = new Int8Array(W), rough = wave([[71, 1], [157, .6], [331, .35]]);
+      for (x = 0; x < W; x++) {
+        var best = 0, sd = 0;
+        peaks.forEach(function(p){
+          var dx = x - p.x; if (dx > W / 2) dx -= W; if (dx < -W / 2) dx += W;
+          var v = p.h * Math.pow(Math.max(0, 1 - Math.abs(dx) / (dx < 0 ? p.wl : p.wr)), 1.15);
+          if (v > best) { best = v; sd = dx > 0 ? 1 : 0; }
+        });
+        hh[x] = best + (rough[x] - 0.5) * 10; side[x] = sd;
+      }
+      return { h: hh, side: side };
+    }
+    var sky = g.createLinearGradient(0, 0, 0, HOR);
+    sky.addColorStop(0, "#4a80c2"); sky.addColorStop(0.6, "#93b7dd"); sky.addColorStop(1, "#dfe9f2");
+    g.fillStyle = sky; g.fillRect(0, 0, W, H);
+    for (var k = 0; k < 9; k++) {                                     // a few thin, soft clouds
+      var cx = rnd() * W, cy = 70 + rnd() * 170, rw = 200 + rnd() * 320, cg = g.createRadialGradient(cx, cy, 0, cx, cy, rw);
+      cg.addColorStop(0, "rgba(255,255,255,.35)"); cg.addColorStop(1, "rgba(255,255,255,0)");
+      g.save(); g.translate(cx, cy); g.scale(1, 0.14); g.translate(-cx, -cy); g.fillStyle = cg; g.fillRect(cx - rw, cy - rw, rw * 2, rw * 2); g.restore();
+    }
+    function draw(r, base, rock, rockDark, shadow, snowDepth, haze){
+      var ys = new Float32Array(W), x;
+      for (x = 0; x < W; x++) ys[x] = base - r.h[x];
+      function outline(){ g.beginPath(); g.moveTo(0, HOR + 2); for (var x = 0; x <= W; x++) g.lineTo(x, ys[x % W]); g.lineTo(W, HOR + 2); g.closePath(); }
+      var top = base - 420, gr = g.createLinearGradient(0, top, 0, HOR); gr.addColorStop(0, rock); gr.addColorStop(1, rockDark);
+      outline(); g.fillStyle = gr; g.fill();
+      g.save(); outline(); g.clip();
+      if (snowDepth) {                                                // snow from the summits down, ragged edge, gullies
+        var wob = wave([[41, 1], [97, .7], [199, .5], [421, .3]]);
+        g.beginPath(); g.moveTo(0, ys[0]);
+        for (x = 0; x <= W; x++) g.lineTo(x, ys[x % W]);
+        for (x = W; x >= 0; x--) { var q = x % W, len = Math.max(0, r.h[q] - snowDepth.from) * snowDepth.k * (0.45 + 0.9 * wob[q]); g.lineTo(x, ys[q] + len); }
+        g.closePath(); g.fillStyle = "#f4f7fb"; g.fill();
+      }
+      for (x = 0; x < W; x++) if (r.side[x]) {                        // the side of every peak away from the sun is darker, fading down
+        var sg = g.createLinearGradient(0, ys[x], 0, ys[x] + shadow[1]); sg.addColorStop(0, shadow[0]); sg.addColorStop(1, "rgba(0,0,0,0)");
+        g.fillStyle = sg; g.fillRect(x, ys[x], 1.2, shadow[1]);
+      }
+      g.restore();
+      if (haze) { var hz = g.createLinearGradient(0, top, 0, HOR); hz.addColorStop(0, "rgba(215,228,240,0)"); hz.addColorStop(1, haze); outline(); g.fillStyle = hz; g.fill(); }
+    }
+    draw(range(26, 260, 470, 160, 380), HOR - 120, "#9fb2cf", "#6f88b0", ["rgba(60,85,130,.3)", 170], { from: 250, k: 1.1 }, "rgba(205,220,236,.75)");
+    draw(range(30, 120, 260, 180, 420), HOR - 70, "#577597", "#3c5878", ["rgba(20,35,60,.25)", 120], null, "rgba(175,198,222,.35)");
+    var hills = range(24, 40, 150, 260, 620), bumps = wave([[613, 1], [1301, .8], [1999, .5]]);
+    for (var x = 0; x < W; x++) hills.h[x] += bumps[x] * 9;                        // treetops along the near hills
+    draw(hills, HOR - 10, "#5e8c45", "#3f6c2c", ["rgba(25,60,25,.2)", 60], null, null);
+    var low = g.createLinearGradient(0, HOR - 50, 0, H);                          // blend into the grass of the yard
+    low.addColorStop(0, "rgba(111,143,79,0)"); low.addColorStop(1, "#6f8f4f");
+    g.fillStyle = low; g.fillRect(0, HOR - 50, W, H - HOR + 50);
+    var tex = new THREE.CanvasTexture(c);
+    tex.wrapS = THREE.RepeatWrapping; tex.anisotropy = 4;
+    return tex;
+  }
   function applySceneTheme(){
     if (!three) return;
-    var sky = cssVar("--scene-sky") || "#dfe6e8", gr = cssVar("--scene-ground") || "#a9ad9f";
+    var sky = cssVar("--scene-sky") || "#6f9bd0", gr = cssVar("--scene-ground") || "#5d7d42";
     three.scene.background = new THREE.Color(sky);
-    three.scene.fog = new THREE.Fog(sky, 60, 160);
+    three.scene.fog = null;                          // the painted mountains give the distance now
     three.ground.material.color.set(gr);
+    three.backdrop.material.color.set(cssVar("--scene-tint") || "#ffffff");
   }
   function labelTexture(label){
     var c = document.createElement("canvas"); c.width = c.height = 128;
