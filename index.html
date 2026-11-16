@@ -219,6 +219,19 @@ details.edit .fields{margin-top:6px}
   .chip{min-height:44px}
   .tabs button{min-height:46px}
 }
+/* loading */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spin{display:inline-block;width:18px;height:18px;border-radius:50%;border:2.5px solid var(--line);border-top-color:var(--accent);animation:spin .8s linear infinite;flex:none}
+.spin.big{width:44px;height:44px;border-width:4px}
+.splash{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px;text-align:center;transition:opacity .3s}
+.splash img{border-radius:20px;box-shadow:0 4px 14px rgba(0,0,0,.12)}
+.splash p{margin:0;font-size:15px;color:var(--muted);max-width:320px}
+.splash.err .spin{display:none}
+.splash.err p{color:var(--ink)}
+.splash.gone{opacity:0;pointer-events:none}
+.busy{position:fixed;top:calc(10px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:40;display:flex;align-items:center;gap:9px;
+  background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:999px;padding:8px 16px 8px 12px;font-size:14px;font-weight:600;box-shadow:0 3px 12px rgba(0,0,0,.16)}
+@media (prefers-reduced-motion: reduce){ .spin{animation-duration:2.4s} .splash{transition:none} }
 [hidden]{display:none !important}
 @media (max-width:760px){
   .app{grid-template-columns:minmax(0,1fr);grid-template-rows:34% 66%}
@@ -241,6 +254,13 @@ details.edit .fields{margin-top:6px}
 </style>
 </head>
 <body>
+<div class="splash" id="splash" role="status" aria-live="polite">
+  <img src="icons/icon-192.png" alt="" width="84" height="84" onerror="this.style.display='none'">
+  <div class="spin big" aria-hidden="true"></div>
+  <p id="splashText">กำลังโหลดข้อมูลกองเสา</p>
+  <button type="button" class="primary" id="splashRetry" hidden>ลองใหม่</button>
+</div>
+<div class="busy" id="busy" role="status" aria-live="polite" hidden><span class="spin" aria-hidden="true"></span><span id="busyText">กำลังบันทึก</span></div>
 <div class="app">
   <div class="stage" id="stage">
     <div class="mode" id="mode"><span id="modeText"></span></div>
@@ -582,15 +602,27 @@ details.edit .fields{margin-top:6px}
   var settle = lsGet("pole-settle") !== "0";
 
   // every server answer carries the whole state; show it
+  var BUSY_TEXT = { withdraw: "กำลังบันทึกการเบิก", undo: "กำลังยกเลิกรายการ", undoPoles: "กำลังยกเลิกเสา", upload: "กำลังอัปข้อมูล WBS",
+    addPile: "กำลังสร้างกองเสา", deletePile: "กำลังลบกอง", mergePiles: "กำลังรวมกอง", setPositions: "กำลังบันทึกตำแหน่งกอง",
+    setOrder: "กำลังบันทึกเลขที่ใบสั่ง", checkAdmin: "กำลังตรวจรหัสผู้ดูแล" };
+  // a small spinning pill while something the user pressed is on its way; the 20-second refresh stays silent
+  var busyCount = 0;
+  function busyOn(text){
+    busyCount++;
+    var t = setTimeout(function(){ $("busyText").textContent = text; $("busy").hidden = false; }, 250);   // quick answers never flash it
+    var over = false;
+    return function(){ if (over) return; over = true; clearTimeout(t); busyCount = Math.max(0, busyCount - 1); if (!busyCount) $("busy").hidden = true; };
+  }
   function request(req, quiet){
     busy = true; setConn("กำลังเชื่อมต่อ");
+    var done = req.action === "state" ? function(){} : busyOn(BUSY_TEXT[req.action] || "กำลังทำงาน");
     return call(req).then(function(res){
-      busy = false;
+      busy = false; done();
       if (!res || !res.ok) { setConn(); throw new Error(res && res.error || "เซิร์ฟเวอร์ตอบกลับไม่ถูกต้อง"); }
       loaded = true; applyState(res.state); setConn();
       return res;
     }, function(){
-      busy = false; setConn("เชื่อมต่อ Google Sheet ไม่ได้", true);
+      busy = false; done(); setConn("เชื่อมต่อ Google Sheet ไม่ได้", true);
       throw new Error("เชื่อมต่อ Google Sheet ไม่ได้ ตรวจอินเทอร์เน็ตแล้วลองใหม่");
     }).catch(function(err){ if (!quiet) toast(err.message); throw err; });
   }
@@ -1519,7 +1551,8 @@ details.edit .fields{margin-top:6px}
     reading = true; $("btnAdd").disabled = true;
     setStatus("กำลังอ่านเลขเสาจากรูป ใช้เวลาประมาณครึ่งนาที");
     shrink(file).then(function(img){
-      return call({ action: "readPhoto", admin: code, mime: img.mime, data: img.data });
+      var done = busyOn("กำลังอ่านเลขเสาจากรูป");
+      return call({ action: "readPhoto", admin: code, mime: img.mime, data: img.data }).then(function(r){ done(); return r; }, function(e){ done(); throw e; });
     }).then(function(res){
       if (!res || !res.ok) throw new Error(res && res.error || "อ่านรูปไม่สำเร็จ");
       var B = toGrid(res.photo.rows.map(function(r){ return r.join(" "); }).join("\n"));
@@ -1681,11 +1714,13 @@ details.edit .fields{margin-top:6px}
     if (dashBusy) return;
     dashBusy = true; $("dStatus").textContent = "กำลังโหลดประวัติ"; $("dStatus").classList.remove("err");
     dashSeen = state.log.length ? state.log[state.log.length - 1].id + state.log.length : "";
+    var done = busyOn("กำลังโหลดประวัติ");
     call({ action: "log" }).then(function(res){
-      dashBusy = false;
+      dashBusy = false; done();
       if (!res || !res.ok || !Array.isArray(res.log)) throw new Error(res && res.error || "โหลดประวัติไม่ได้");
       dashLog = res.log; $("dStatus").textContent = ""; renderDash();
     }).catch(function(e){
+      done();
       dashBusy = false;
       $("dStatus").textContent = (e && e.message && e.message !== "Failed to fetch" ? e.message : "โหลดประวัติไม่ได้ ตรวจอินเทอร์เน็ตแล้วกดรีเฟรช");
       $("dStatus").classList.add("err");
@@ -1971,8 +2006,31 @@ details.edit .fields{margin-top:6px}
     }
     tick();
   }
-  function reload(){ if (!busy && !moving) request({ action: "state" }, true).catch(function(){ if (!loaded) { $("pan-w").textContent = ""; $("pan-w").appendChild(el("p", "status err", "โหลดข้อมูลไม่ได้ ตรวจ URL ของ Apps Script และอินเทอร์เน็ต แล้วเปิดหน้านี้ใหม่")); } }); }
-  reload();
+  function reload(){
+    if (busy || moving) return;
+    request({ action: "state" }, true).then(hideSplash, function(e){
+      if (loaded) return;
+      $("splash").classList.add("err");
+      var m = e && e.message || "";
+      $("splashText").textContent = m.indexOf("เชื่อมต่อ Google Sheet ไม่ได้") === 0 ? "เชื่อมต่อ Google Sheet ไม่ได้ ตรวจอินเทอร์เน็ตแล้วกดลองใหม่"
+                                                                             : "โหลดข้อมูลไม่ได้" + (m ? " (" + m + ")" : "") + " กดลองใหม่";
+      $("splashRetry").hidden = false;
+    });
+  }
+  function hideSplash(){
+    var s = $("splash"); if (s.classList.contains("gone")) return;
+    s.classList.add("gone"); setTimeout(function(){ s.hidden = true; }, 350);
+  }
+  var slowTimer = null;
+  function armSlow(){              // still waiting after 6 s: say so, unless it has already failed
+    clearTimeout(slowTimer);
+    slowTimer = setTimeout(function(){ if (!loaded && !$("splash").classList.contains("err")) $("splashText").textContent = "เน็ตช้า กำลังเชื่อมต่อ Google Sheet รอสักครู่"; }, 6000);
+  }
+  $("splashRetry").addEventListener("click", function(){
+    $("splash").classList.remove("err"); $("splashRetry").hidden = true;
+    $("splashText").textContent = "กำลังโหลดข้อมูลกองเสา"; armSlow(); reload();
+  });
+  armSlow(); reload();
   // pick up other people's withdrawals and new WBS uploads
   setInterval(function(){ if (!document.hidden) reload(); }, 20000);
   document.addEventListener("visibilitychange", function(){ if (!document.hidden) reload(); });
