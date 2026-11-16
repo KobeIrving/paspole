@@ -3,6 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#d9580b">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" type="image/png" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="กองเสา">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>กองเสา 3D</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet">
@@ -146,6 +154,31 @@ table.dash td.labels{font-family:var(--font-display);font-variant-numeric:tabula
 table.dash td .sub{display:block;color:var(--muted);font-size:12.5px}
 table.dash tr:last-child td{border-bottom:0}
 table.dash tfoot td{font-weight:700;background:var(--bg)}
+table.dash tr.grp{cursor:pointer}
+table.dash tr.grp:hover td,table.dash tr.grp:focus-visible td{background:var(--accent-soft)}
+table.dash tr.grp[aria-expanded="true"] td{border-bottom-color:transparent}
+table.dash tr.trips td{background:var(--bg);padding:6px 10px 10px}
+.triplist{display:flex;flex-direction:column;gap:4px;position:sticky;left:10px;max-width:calc(100vw - 72px)}
+.tripline{display:grid;grid-template-columns:52px 130px 1fr;gap:2px 10px;align-items:baseline;font-size:13px}
+.tripline .tn{font-weight:600;color:var(--accent)}
+.tripline b{font-family:var(--font-display);font-weight:600;font-variant-numeric:tabular-nums}
+.tripline .sub{grid-column:3;color:var(--muted);font-size:12.5px}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.segb{display:flex;flex-direction:column;align-items:flex-start;gap:1px;text-align:left;padding:9px 11px;border-radius:9px;background:var(--panel);border:1.5px solid var(--line)}
+.segb b{font-size:15px}
+.segb span{font-size:12px;color:var(--muted)}
+.segb[aria-checked="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+.segb[aria-checked="true"] b{color:var(--accent)}
+.segb:hover{color:inherit}
+.orderbox{display:flex;flex-direction:column;gap:6px;border-top:1px dashed var(--line);padding-top:10px;font-size:14px}
+.orderbox .row-actions{flex-wrap:nowrap}
+.orderbox input{flex:1;font-family:var(--font-display);font-variant-numeric:tabular-nums}
+.sublabel{font-size:13.5px;font-weight:600;margin-top:2px}
+.card.emg{border-left:4px solid #c62828}
+table.dash tr.emg td.wbs{color:#c62828}
+.sofar{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:8px 10px;font-size:13.5px;display:flex;flex-direction:column;gap:3px}
+.sofar b{font-weight:600}
+.sofar .trip{color:var(--muted);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 /* pole picker laid out like the face of the stack: top layer first */
 .pgrid-wrap{overflow-x:auto;margin:0 -4px;padding:2px 4px 6px;-webkit-overflow-scrolling:touch}
 .pgrid{display:grid;gap:5px;align-items:center}
@@ -242,6 +275,7 @@ details.edit .fields{margin-top:6px}
           <label for="dFrom">ตั้งแต่วันที่<input type="date" id="dFrom"></label>
           <label for="dTo">ถึงวันที่<input type="date" id="dTo"></label>
           <label for="dType">ชนิดเสา<select id="dType"><option value="">ทุกชนิด</option></select></label>
+          <label for="dKind">เบิกเพื่อ<select id="dKind"><option value="">ทั้งหมด</option><option value="ก่อสร้าง">งานก่อสร้าง</option><option value="ฉุกเฉิน">เหตุฉุกเฉิน</option><option value="ฉุกเฉิน-ไม่มีใบสั่ง">ฉุกเฉินที่ยังไม่มีใบสั่ง</option></select></label>
           <label for="dQ">ค้นหา<input type="text" id="dQ" placeholder="WBS เลขเสา ผู้รับเหมา ใบจอง ผู้เบิก"></label>
         </div>
         <div class="row-actions">
@@ -258,6 +292,7 @@ details.edit .fields{margin-top:6px}
           <div class="tile main"><b id="kPoles">0</b><span>เบิกแล้ว (ต้น)</span></div>
           <div class="tile"><b id="kWbs">0</b><span>WBS</span></div>
           <div class="tile"><b id="kTimes">0</b><span>ครั้งที่เบิก</span></div>
+          <div class="tile"><b id="kEmg">0</b><span>เบิกเหตุฉุกเฉิน (ต้น)</span></div>
           <div class="tile"><b id="kYard">0</b><span>คงเหลือในลานตอนนี้ (ต้น)</span></div>
         </div>
         <h3>ตามชนิดเสา</h3>
@@ -270,6 +305,7 @@ details.edit .fields{margin-top:6px}
               <th data-k="wbs">WBS / ชื่องาน</th>
               <th data-k="desc">ชนิดเสา</th>
               <th data-k="n">ต้น</th>
+              <th data-k="trips">รอบ</th>
               <th data-k="labels">เลขเสา</th>
               <th data-k="contractor">ผู้รับเหมา / ใบจอง</th>
               <th data-k="left">ยังเบิกได้</th>
@@ -426,13 +462,23 @@ details.edit .fields{margin-top:6px}
       var a = req.action;
       if (a === "withdraw") {
         var user = String(req.user || "").trim(), labels = (req.labels || []).map(String);
+        var emg = req.kind === "emergency";
         if (!user) fail("ยังไม่ได้ใส่ชื่อผู้เบิก");
         if (!labels.length) fail("ยังไม่ได้เลือกเสา");
-        var line = view().demand.filter(function(l){ return l.key === req.key; })[0];
-        if (!line) fail("ไม่พบ WBS นี้ในข้อมูลล่าสุด กดรีเฟรชแล้วเลือกใหม่");
-        if (labels.length > line.left) fail("WBS นี้เบิกได้อีก " + line.left + " ต้นเท่านั้น");
         var pile = db.piles.filter(function(p){ return p.name === req.pile; })[0];
         if (!pile) fail("ไม่พบกอง " + req.pile);
+        var line;
+        if (emg) {
+          var cause = String(req.cause || "").trim(), place = String(req.place || "").trim(), order = String(req.order || "").replace(/\s+/g, "");
+          if (order && !/^\d{1,20}$/.test(order)) fail("เลขที่ใบสั่งต้องเป็นตัวเลขเท่านั้น");
+          if (!cause) fail("เลือกประเภทเหตุก่อน");
+          if (!place) fail("ใส่สถานที่เกิดเหตุก่อน");
+          line = { wbs: "", job: cause + " · " + place, net: order, mat: pile.mat, desc: String(req.desc || "") || pile.mat, booking: "", contractor: "", key: "" };
+        } else {
+          line = view().demand.filter(function(l){ return l.key === req.key; })[0];
+          if (!line) fail("ไม่พบ WBS นี้ในข้อมูลล่าสุด กดรีเฟรชแล้วเลือกใหม่");
+          if (labels.length > line.left) fail("WBS นี้เบิกได้อีก " + line.left + " ต้นเท่านั้น");
+        }
         if (pile.mat !== line.mat) fail("กอง " + pile.name + " ไม่ใช่เสาชนิดที่ WBS นี้จองไว้");
         var all = [].concat.apply([], pile.rows);
         labels.forEach(function(l){
@@ -442,14 +488,22 @@ details.edit .fields{margin-top:6px}
         pile.removed = pile.removed.concat(labels);
         var newId = Date.now().toString(36);
         db.log.push({ id: newId, ts: Date.now(), user: user, wbs: line.wbs, job: line.job, net: line.net, mat: line.mat, desc: line.desc,
-          booking: String(req.booking || "").trim() || line.booking, contractor: String(req.contractor || "").trim() || line.contractor,
-          pile: pile.name, labels: labels, key: line.key, importId: db.importId });
+          booking: emg ? "" : String(req.booking || "").trim() || line.booking, contractor: emg ? "" : String(req.contractor || "").trim() || line.contractor,
+          pile: pile.name, labels: labels, key: line.key, importId: emg ? "" : db.importId,
+          kind: emg ? "ฉุกเฉิน" : "ก่อสร้าง", note: String(req.note || "").trim() });
       } else if (a === "undo") {
         admin();
         var e = db.log.filter(function(x){ return x.id === req.id; })[0];
         if (!e) fail("ไม่พบรายการนี้ อาจถูกยกเลิกไปแล้ว");
         db.piles.forEach(function(p){ if (p.name === e.pile) p.removed = p.removed.filter(function(l){ return e.labels.indexOf(l) < 0; }); });
         db.log.splice(db.log.indexOf(e), 1);
+      } else if (a === "setOrder") {
+        admin();
+        var oe = db.log.filter(function(x){ return x.id === req.id; })[0], on = String(req.order || "").replace(/\s+/g, "");
+        if (!oe) fail("ไม่พบรายการนี้ อาจถูกยกเลิกไปแล้ว");
+        if (oe.wbs) fail("ใส่เลขที่ใบสั่งได้เฉพาะรายการเหตุฉุกเฉิน");
+        if (on && !/^\d{1,20}$/.test(on)) fail("เลขที่ใบสั่งต้องเป็นตัวเลขเท่านั้น");
+        oe.net = on;
       } else if (a === "undoPoles") {
         var ent = db.log.filter(function(x){ return x.id === req.id; })[0], want = (req.labels || []).map(String);
         if (!want.length) fail("เลือกเลขเสาที่จะยกเลิกก่อน");
@@ -796,7 +850,7 @@ details.edit .fields{margin-top:6px}
       if (wz.pile && !run) wz = null;
       else if (run) wz.sel.forEach(function(l){ if (run.gone.has(l)) wz.sel.delete(l); });
     }
-    stats(); paint(); fillTypes(); renderHistory(); renderAdmin();
+    stats(); paint(); fillTypes(); if (!typingIn($("history"))) renderHistory(); renderAdmin();
     if (!$("pan-d").hidden) { var last = state.log.length ? state.log[state.log.length - 1].id + state.log.length : ""; if (last !== dashSeen) loadDash(); else renderDash(); }
     if (!$("mergeBox").hidden) { mergeSel.forEach(function(n){ if (!runOf(n)) mergeSel.delete(n); }); renderMerge(); paintMerge(); }
     // do not redraw the form under someone's fingers; just tick off what changed
@@ -877,10 +931,10 @@ details.edit .fields{margin-top:6px}
     if (!wz) { toast("กดปุ่ม เบิกเสา ก่อน"); syncChips(); return; }
     if (!wz.pile) { choosePile(p.run.name); return; }
     if (p.run.name !== wz.pile) { toast("กำลังเบิกจากกอง " + wz.pile + " ถ้าจะเปลี่ยน กด เปลี่ยนกอง"); return; }
-    var line = lineOf(wz.key);
-    if (!line) { toast("เลือก WBS ก่อน แล้วค่อยเลือกเสา"); syncChips(); return; }
+    var line = lineOf(wz.key), emg = wz.kind === "emergency";
+    if (!line && !emg) { toast("เลือก WBS ก่อน แล้วค่อยเลือกเสา"); syncChips(); return; }
     if (wz.sel.has(p.label)) wz.sel.delete(p.label);
-    else if (wz.sel.size >= line.left) toast("WBS นี้เบิกได้อีก " + line.left + " ต้นเท่านั้น");
+    else if (!emg && wz.sel.size >= line.left) toast("WBS นี้เบิกได้อีก " + line.left + " ต้นเท่านั้น");
     else wz.sel.add(p.label);
     paint(); syncChips(); updateCount();
   }
@@ -891,13 +945,14 @@ details.edit .fields{margin-top:6px}
   function updateCount(){
     if (!wz || !wz.pile) return;
     var line = lineOf(wz.key), n = wz.sel.size;
+    if (wz.kind === "emergency") line = { left: null };                 // no booking limit for emergency work
     var c = $("actCount"), s = $("actSel"), b = $("actOk");
-    if (c) { c.textContent = ""; if (line) { c.appendChild(document.createTextNode("เลือกแล้ว ")); c.appendChild(el("b", null, n)); c.appendChild(document.createTextNode(" / " + line.left + " ต้น")); } }
+    if (c) { c.textContent = ""; if (line) { c.appendChild(document.createTextNode("เลือกแล้ว ")); c.appendChild(el("b", null, n)); c.appendChild(document.createTextNode(line.left == null ? " ต้น" : " / " + line.left + " ต้น")); } }
     if (s) {
       s.textContent = "";
       if (!line) s.textContent = "เลือก WBS ก่อน";
-      else if (!n) s.textContent = "แตะเลขเสาที่จะเบิก (เบิกได้อีก " + line.left + " ต้น)";
-      else { s.appendChild(document.createTextNode("เลือก " + n + "/" + line.left + " ต้น: ")); s.appendChild(el("b", null, Array.from(wz.sel).join(", "))); }
+      else if (!n) s.textContent = line.left == null ? "แตะเลขเสาที่จะเบิก" : "แตะเลขเสาที่จะเบิก (เบิกได้อีก " + line.left + " ต้น)";
+      else { s.appendChild(document.createTextNode("เลือก " + n + (line.left == null ? "" : "/" + line.left) + " ต้น: ")); s.appendChild(el("b", null, Array.from(wz.sel).join(", "))); }
     }
     if (b) { b.disabled = !n || busy; b.textContent = n ? "บันทึกการเบิก " + n + " ต้น" : "บันทึกการเบิก"; }
   }
@@ -910,14 +965,14 @@ details.edit .fields{margin-top:6px}
 
     if (!wz) {                                   // start screen
       var go = el("button", "primary big", "เบิกเสา"); go.type = "button";
-      go.addEventListener("click", function(){ if (!$("mergeBox").hidden) closeMerge(""); if (moving) { toast("กำลังย้ายกองอยู่ บันทึกหรือยกเลิกในแท็บ ผู้ดูแล ก่อน"); return; } wz = { pile: "", key: "", sel: new Set(), booking: "", contractor: "" }; renderW(); });
+      go.addEventListener("click", function(){ if (!$("mergeBox").hidden) closeMerge(""); if (moving) { toast("กำลังย้ายกองอยู่ บันทึกหรือยกเลิกในแท็บ ผู้ดูแล ก่อน"); return; } wz = { pile: "", key: "", sel: new Set(), booking: "", contractor: "", kind: "wbs", cause: "", place: "", note: "", order: "" }; renderW(); });
       box.appendChild(go);
       state.log.filter(canSelfUndo).reverse().forEach(function(e){
         var c = el("section", "card active"), hd = el("div", "card-head");
         hd.appendChild(el("h2", null, "คุณเพิ่งเบิก " + e.labels.length + " ต้น"));
         hd.appendChild(el("time", null, stamp(e.ts).slice(11)));
         c.appendChild(hd);
-        c.appendChild(el("p", "note", e.wbs + " · " + shortType(e.desc) + " · กอง " + e.pile));
+        c.appendChild(el("p", "note", (e.wbs || "เหตุฉุกเฉิน · " + e.job) + " · " + shortType(e.desc) + " · กอง " + e.pile));
         var ub = undoBox(e); if (ub) c.appendChild(ub);
         box.appendChild(c);
       });
@@ -932,6 +987,7 @@ details.edit .fields{margin-top:6px}
         box.appendChild(c);
       });
       if (!runs.length) box.appendChild(el("p", "empty", "ยังไม่มีกองเสา ให้ผู้ดูแลเพิ่มกองในแท็บ ผู้ดูแล"));
+      var ic = installCard(); if (ic) box.appendChild(ic);
       return;
     }
 
@@ -959,40 +1015,79 @@ details.edit .fields{margin-top:6px}
     chg.addEventListener("click", function(){ wz.pile = ""; wz.key = ""; wz.sel.clear(); frame(null); paint(); renderW(); });
     head.appendChild(chg); card.appendChild(head);
 
-    var lw = el("label", "step", "2. เลือก WBS"); lw.htmlFor = "selWbs"; card.appendChild(lw);   // step 2: WBS
-    var lines = state.demand.filter(function(l){ return l.mat === run.mat && l.left > 0; });
-    if (!lines.length) card.appendChild(el("p", "status err", "ไม่มี WBS ที่จอง " + typeDesc(run.mat) + " ค้างเบิกในข้อมูลล่าสุด"));
-    else {
-      var sel = document.createElement("select"); sel.id = "selWbs";
-      var o0 = el("option", null, "เลือก WBS (" + lines.length + " รายการ)"); o0.value = ""; sel.appendChild(o0);
-      lines.forEach(function(l){
-        var o = el("option", null, l.wbs + " · เหลือ " + l.left + " ต้น · " + (l.job || "")); o.value = l.key; sel.appendChild(o);
+    var emg = wz.kind === "emergency";
+    card.appendChild(el("div", "step", "2. เบิกเพื่อ"));                                        // step 2: purpose
+    var seg = el("div", "seg"); seg.setAttribute("role", "radiogroup"); seg.setAttribute("aria-label", "เบิกเพื่อ");
+    [["wbs", "งานก่อสร้าง", "ตาม WBS ที่จองไว้"], ["emergency", "เหตุฉุกเฉิน", "รถชนเสา เสาล้ม ฯลฯ"]].forEach(function(o){
+      var b = el("button", "segb"); b.type = "button"; b.setAttribute("role", "radio");
+      b.setAttribute("aria-checked", wz.kind === o[0] ? "true" : "false");
+      b.appendChild(el("b", null, o[1])); b.appendChild(el("span", null, o[2]));
+      b.addEventListener("click", function(){ if (wz.kind === o[0]) return; wz.kind = o[0]; wz.sel.clear(); paint(); renderW(); });
+      seg.appendChild(b);
+    });
+    card.appendChild(seg);
+    var ready;
+    if (emg) {
+      var fe = el("div", "fields");
+      var lc = el("label", null, "ประเภทเหตุ"); lc.htmlFor = "emgCause";
+      var sc = document.createElement("select"); sc.id = "emgCause";
+      ["", "รถชนเสา", "เสาหัก/ล้มจากพายุ", "ต้นไม้ล้มทับ", "ไฟไหม้", "อื่น ๆ"].forEach(function(v){
+        var o = el("option", null, v || "เลือกประเภทเหตุ"); o.value = v; sc.appendChild(o);
       });
-      sel.value = line ? wz.key : "";
-      sel.addEventListener("change", function(){
-        wz.key = sel.value; wz.sel.clear();
-        var l = lineOf(wz.key); wz.booking = l ? l.booking : ""; wz.contractor = l ? l.contractor : "";
-        paint(); renderW();
-      });
-      card.appendChild(sel);
-    }
-    if (line) {
-      var dl = el("dl", "kv");
-      [["ชื่องาน", line.job || "-"], ["ใบจอง", wz.booking || "-"], ["ผู้รับเหมา", wz.contractor || "-"], ["เบิกได้อีก", line.left + " ต้น"]].forEach(function(kv){
-        dl.appendChild(el("dt", null, kv[0])); dl.appendChild(el("dd", null, kv[1]));
-      });
-      card.appendChild(dl);
-      var ed = el("details", "edit"), es = el("summary", null, "แก้เลขใบจอง หรือผู้รับเหมา");   // rarely needed: folded away
-      ed.appendChild(es);
-      var f = el("div", "fields");
-      [["actBooking", "เลขที่ใบจอง", "booking", 40], ["actContractor", "ผู้รับเหมา", "contractor", 120]].forEach(function(d){
-        var lb = el("label", null, d[1]); lb.htmlFor = d[0];
-        var inp = document.createElement("input"); inp.type = "text"; inp.id = d[0]; inp.value = wz[d[2]]; inp.maxLength = d[3];
-        inp.addEventListener("input", function(){ wz[d[2]] = inp.value; });
-        f.appendChild(lb); f.appendChild(inp);
-      });
-      ed.appendChild(f); card.appendChild(ed);
+      sc.value = wz.cause; sc.addEventListener("change", function(){ wz.cause = sc.value; clearSt(); });
+      var lp = el("label", null, "สถานที่"); lp.htmlFor = "emgPlace";
+      var ip = document.createElement("input"); ip.type = "text"; ip.id = "emgPlace"; ip.maxLength = 120; ip.value = wz.place;
+      ip.placeholder = "เช่น บ.ป่าตึง ม.6 หน้าวัด"; ip.addEventListener("input", function(){ wz.place = ip.value; clearSt(); });
+      var ln = el("label", null, "หมายเหตุ"); ln.htmlFor = "emgNote";
+      var inote = document.createElement("input"); inote.type = "text"; inote.id = "emgNote"; inote.maxLength = 200; inote.value = wz.note;
+      inote.placeholder = "ไม่บังคับ เช่น เลขที่แจ้งเหตุ ทะเบียนรถ"; inote.addEventListener("input", function(){ wz.note = inote.value; });
+      var lo = el("label", null, "เลขที่ใบสั่ง"); lo.htmlFor = "emgOrder";
+      var io = orderInput("emgOrder", wz.order, function(v){ wz.order = v; clearSt(); });
+      io.placeholder = "ไม่บังคับ ใส่ทีหลังได้";
+      [lc, sc, lp, ip, lo, io, ln, inote].forEach(function(x){ fe.appendChild(x); });
+      card.appendChild(fe);
+      card.appendChild(el("p", "note", "ไม่ต้องมี WBS และไม่จำกัดจำนวน รายการจะแยกเป็นเหตุฉุกเฉินในประวัติและแท็บสรุป"));
+      ready = true;
+    } else {
+      var lw = el("label", "sublabel", "เลือก WBS"); lw.htmlFor = "selWbs"; card.appendChild(lw);
+      var lines = state.demand.filter(function(l){ return l.mat === run.mat && l.left > 0; });
+      if (!lines.length) card.appendChild(el("p", "status err", "ไม่มี WBS ที่จอง " + typeDesc(run.mat) + " ค้างเบิกในข้อมูลล่าสุด"));
+      else {
+        var sel = document.createElement("select"); sel.id = "selWbs";
+        var o0 = el("option", null, "เลือก WBS (" + lines.length + " รายการ)"); o0.value = ""; sel.appendChild(o0);
+        lines.forEach(function(l){
+          var o = el("option", null, l.wbs + " · เหลือ " + l.left + " ต้น · " + (l.job || "")); o.value = l.key; sel.appendChild(o);
+        });
+        sel.value = line ? wz.key : "";
+        sel.addEventListener("change", function(){
+          wz.key = sel.value; wz.sel.clear();
+          var l = lineOf(wz.key); wz.booking = l ? l.booking : ""; wz.contractor = l ? l.contractor : "";
+          paint(); renderW();
+        });
+        card.appendChild(sel);
+      }
+      if (line) {
+        var dl = el("dl", "kv");
+        [["ชื่องาน", line.job || "-"], ["ใบจอง", wz.booking || "-"], ["ผู้รับเหมา", wz.contractor || "-"], ["เบิกได้อีก", line.left + " ต้น"]].forEach(function(kv){
+          dl.appendChild(el("dt", null, kv[0])); dl.appendChild(el("dd", null, kv[1]));
+        });
+        card.appendChild(dl);
+        card.appendChild(soFar(line));
+        var ed = el("details", "edit"), es = el("summary", null, "แก้เลขใบจอง หรือผู้รับเหมา");   // rarely needed: folded away
+        ed.appendChild(es);
+        var f = el("div", "fields");
+        [["actBooking", "เลขที่ใบจอง", "booking", 40], ["actContractor", "ผู้รับเหมา", "contractor", 120]].forEach(function(d){
+          var lb = el("label", null, d[1]); lb.htmlFor = d[0];
+          var inp = document.createElement("input"); inp.type = "text"; inp.id = d[0]; inp.value = wz[d[2]]; inp.maxLength = d[3];
+          inp.addEventListener("input", function(){ wz[d[2]] = inp.value; });
+          f.appendChild(lb); f.appendChild(inp);
+        });
+        ed.appendChild(f); card.appendChild(ed);
 
+      }
+      ready = !!line;
+    }
+    if (ready) {
       var h3 = el("div", "card-head");                                                             // step 3: poles
       h3.appendChild(el("h2", "step", "3. เลือกเสา"));
       var cnt2 = el("span", "count"); cnt2.id = "actCount"; h3.appendChild(cnt2);
@@ -1016,7 +1111,7 @@ details.edit .fields{margin-top:6px}
     var s = el("div", "sel-list"); s.id = "actSel"; dock.appendChild(s);
     var st = el("p", "status"); st.id = "actStatus"; st.setAttribute("role", "status"); dock.appendChild(st);
     var acts = el("div", "row-actions");
-    if (line) { var ok = el("button", "primary", "บันทึกการเบิก"); ok.type = "button"; ok.id = "actOk"; ok.addEventListener("click", saveW); acts.appendChild(ok); }
+    if (ready) { var ok = el("button", "primary", "บันทึกการเบิก"); ok.type = "button"; ok.id = "actOk"; ok.addEventListener("click", saveW); acts.appendChild(ok); }
     var cancel = el("button", null, "ยกเลิก"); cancel.type = "button"; cancel.addEventListener("click", cancelW);
     acts.appendChild(cancel); dock.appendChild(acts); card.appendChild(dock);
     box.appendChild(card);
@@ -1052,21 +1147,69 @@ details.edit .fields{margin-top:6px}
     if (show) setTimeout(function(){ resize(); }, 0);
   }
   $("btn3d").addEventListener("click", function(){ set3d(document.querySelector(".app").classList.contains("no3d")); });
+  // someone is typing in a box inside el: do not redraw it under their fingers
+  function typingIn(el0){ var a = document.activeElement; return !!a && el0.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); }
+  // numbers-only text box: numeric keypad on phones, anything else is dropped as it is typed
+  function orderInput(id, value, onChange){
+    var i = document.createElement("input"); i.type = "text"; i.id = id; i.value = value || ""; i.maxLength = 20;
+    i.inputMode = "numeric"; i.pattern = "[0-9]*"; i.autocomplete = "off";
+    i.addEventListener("input", function(){ var v = i.value.replace(/\D+/g, ""); if (v !== i.value) i.value = v; onChange(v); });
+    return i;
+  }
+  function clearSt(){ var s = $("actStatus"); if (s && s.classList.contains("err")) { s.textContent = ""; s.classList.remove("err"); } }
   function cancelW(){ wz = null; frame(null); paint(); renderW(); }
+
+  /* ---------- install on the home screen ---------- */
+  var installEvt = null;
+  var standalone = (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches) || window.navigator.standalone === true;
+  var iOS = /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  window.addEventListener("beforeinstallprompt", function(ev){ ev.preventDefault(); installEvt = ev; if (!wz) renderW(); });
+  window.addEventListener("appinstalled", function(){ installEvt = null; standalone = true; toast("ติดตั้งแล้ว เปิดจากไอคอน กองเสา บนหน้าจอได้เลย"); if (!wz) renderW(); });
+  function installCard(){
+    if (standalone || lsGet("pole-install-hide") === "1") return null;
+    if (!installEvt && !iOS) return null;                  // the browser cannot install (yet): say nothing
+    var c = el("section", "card"), hd = el("div", "card-head");
+    hd.appendChild(el("h2", null, "ติดตั้งเป็นแอปบนมือถือ"));
+    var x = el("button", "small", "ไม่ต้องแสดงอีก"); x.type = "button";
+    x.addEventListener("click", function(){ lsSet("pole-install-hide", "1"); renderW(); });
+    hd.appendChild(x); c.appendChild(hd);
+    if (installEvt) {
+      c.appendChild(el("p", "note", "มีไอคอน กองเสา บนหน้าจอ กดแล้วเปิดเต็มจอได้ทันที"));
+      var b = el("button", "primary", "ติดตั้งแอป"); b.type = "button";
+      b.addEventListener("click", function(){
+        var ev = installEvt; installEvt = null;
+        ev.prompt();
+        (ev.userChoice || Promise.resolve()).then(function(){ renderW(); });
+      });
+      c.appendChild(b);
+    } else {
+      c.appendChild(el("p", "note", "เปิดหน้านี้ใน Safari กดปุ่มแชร์ (สี่เหลี่ยมมีลูกศรขึ้น) แล้วเลือก เพิ่มไปยังหน้าจอโฮม"));
+    }
+    return c;
+  }
+  if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
+    window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
+  }
   function saveW(){
     if (!wz || busy) return;
     var st = $("actStatus"), user = $("actUser").value.trim(), n = wz.sel.size, line = lineOf(wz.key);
     function err(t){ st.textContent = t; st.classList.add("err"); }
     if (!user) { err("ใส่ชื่อผู้เบิกก่อนบันทึก"); $("actUser").parentNode.hidden = false; $("actUser").focus(); return; }
-    if (!n || !line) return;
+    var emg = wz.kind === "emergency";
+    if (emg && !wz.cause) { err("เลือกประเภทเหตุก่อน"); $("emgCause").focus(); return; }
+    if (emg && !wz.place.trim()) { err("ใส่สถานที่เกิดเหตุก่อน"); $("emgPlace").focus(); return; }
+    if (!n || (!line && !emg)) return;
     lsSet("pole-user", user);
     st.classList.remove("err"); st.textContent = "กำลังบันทึก";
     $("actOk").disabled = true;
-    var req = { action: "withdraw", user: user, pile: wz.pile, key: wz.key, labels: Array.from(wz.sel), booking: wz.booking, contractor: wz.contractor };
-    var wbs = line.wbs, keep = wz;
+    var req = emg
+      ? { action: "withdraw", kind: "emergency", user: user, pile: wz.pile, labels: Array.from(wz.sel), cause: wz.cause, place: wz.place.trim(), note: wz.note.trim(), order: wz.order,
+          desc: types[(runOf(wz.pile) || {}).mat] || "" }
+      : { action: "withdraw", user: user, pile: wz.pile, key: wz.key, labels: Array.from(wz.sel), booking: wz.booking, contractor: wz.contractor };
+    var wbs = emg ? "เหตุฉุกเฉิน " + wz.cause : line.wbs, keep = wz;
     wz = null; justSaved = true;
     request(req, true).then(function(res){
-      if (res && res.id) { addMine(res.id); renderW(); }
+      if (res && res.id) { addMine(res.id); renderW(); renderHistory(); }
       frame(null); toast("บันทึกแล้ว เบิก " + n + " ต้น ให้ " + wbs + " ถ้าเบิกผิด ยกเลิกเองได้ภายใน 10 นาที");
     }, function(e){
       justSaved = false; wz = keep;
@@ -1121,6 +1264,42 @@ details.edit .fields{margin-top:6px}
     return wrap;
   }
 
+  // what this WBS has already taken of this pole type, trip by trip
+  function soFar(line){
+    var past = state.log.filter(function(e){ return e.wbs === line.wbs && e.mat === line.mat; }).sort(function(a, b){ return a.ts - b.ts; });
+    var box = el("div", "sofar");
+    if (!past.length) { box.appendChild(el("span", null, "ยังไม่เคยเบิกเสาชนิดนี้ให้ WBS นี้ในแอป")); return box; }
+    var tot = past.reduce(function(s, e){ return s + e.labels.length; }, 0);
+    box.appendChild(el("b", null, "เบิกไปแล้ว " + past.length + " รอบ รวม " + tot + " ต้น"));
+    var from = Math.max(0, past.length - 5);
+    if (from) box.appendChild(el("div", "trip", "รอบ 1 ถึง " + from + " ดูได้ในแท็บ สรุป"));
+    past.slice(from).forEach(function(e, i){
+      box.appendChild(el("div", "trip", "รอบ " + (from + i + 1) + " · " + shortStamp(e.ts) + " · " + e.labels.join(", ") + (e.user ? " · " + e.user : "")));
+    });
+    return box;
+  }
+  function shortStamp(ts){ var d = new Date(ts); return d.getDate() + "/" + (d.getMonth() + 1) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()); }
+
+  // admin: put or change the order number on an emergency withdrawal
+  var orderDraft = {};
+  function orderBox(e){
+    if (e.wbs || !$("inAdmin").value) return null;
+    var wrap = el("div", "orderbox"), id = "ord-" + e.id;
+    var lb = el("label", null, e.net ? "แก้เลขที่ใบสั่ง" : "ใส่เลขที่ใบสั่ง"); lb.htmlFor = id;
+    var inp = orderInput(id, orderDraft[e.id] != null ? orderDraft[e.id] : e.net, function(v){ orderDraft[e.id] = v; });
+    var b = el("button", "small", "บันทึกใบสั่ง"); b.type = "button";
+    b.addEventListener("click", function(){
+      var v = inp.value;
+      b.disabled = true; b.textContent = "กำลังบันทึก";
+      request({ action: "setOrder", id: e.id, order: v, admin: $("inAdmin").value }, true).then(function(){
+        delete orderDraft[e.id]; toast(v ? "ผูกใบสั่ง " + v + " แล้ว" : "ล้างเลขที่ใบสั่งแล้ว");
+      }, function(err){ b.disabled = false; b.textContent = "บันทึกใบสั่ง"; toast(err.message); });
+    });
+    var row = el("div", "row-actions"); row.appendChild(inp); row.appendChild(b);
+    wrap.appendChild(lb); wrap.appendChild(row);
+    return wrap;
+  }
+
   /* ---------- history ---------- */
   function pad(n){ return (n < 10 ? "0" : "") + n; }
   function stamp(ts){ var d = new Date(ts); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()); }
@@ -1129,16 +1308,18 @@ details.edit .fields{margin-top:6px}
     if (!state.log.length) { box.appendChild(el("p", "empty", "ยังไม่มีรายการเบิก")); return; }
     state.log.slice().reverse().forEach(function(e){
       var card = el("section", "card entry"), head = el("div", "card-head");
-      head.appendChild(el("h2", null, e.wbs));
+      head.appendChild(el("h2", null, e.wbs || "เหตุฉุกเฉิน"));
+      if (!e.wbs) card.classList.add("emg");
       head.appendChild(el("time", null, stamp(e.ts)));
       card.appendChild(head);
       var dl = el("dl", "kv");
-      [["ชื่องาน", e.job || "-"], ["เสา", shortType(e.desc) + " · " + e.labels.length + " ต้น · กอง " + e.pile], ["ใบจอง", e.booking || "-"],
-       ["ผู้รับเหมา", e.contractor || "-"], ["ผู้เบิก", e.user || "-"]].forEach(function(kv){
+      [[e.wbs ? "ชื่องาน" : "เหตุ", e.job || "-"]].concat(e.note ? [["หมายเหตุ", e.note]] : []).concat([["เสา", shortType(e.desc) + " · " + e.labels.length + " ต้น · กอง " + e.pile], 
+       ["ผู้เบิก", e.user || "-"]]).concat(e.wbs ? [["ใบจอง", e.booking || "-"], ["ผู้รับเหมา", e.contractor || "-"]] : [["ใบสั่ง", e.net || "ยังไม่ระบุ"]]).forEach(function(kv){
         dl.appendChild(el("dt", null, kv[0])); dl.appendChild(el("dd", null, kv[1]));
       });
       card.appendChild(dl);
       card.appendChild(el("div", "labels", "เลขเสา " + e.labels.join(", ")));
+      var ob = orderBox(e); if (ob) card.appendChild(ob);
       var ub = undoBox(e); if (ub) card.appendChild(ub);
       var b = el("button", "small", "ยกเลิกรายการนี้ (ผู้ดูแล)"); b.type = "button";
       twoStep(b, "ยกเลิกรายการนี้ (ผู้ดูแล)", function(){
@@ -1459,7 +1640,7 @@ details.edit .fields{margin-top:6px}
   });
 
   /* ---------- summary tab ---------- */
-  var dashLog = null, dashSeen = null, dashSort = { k: "last", dir: -1 }, dashBusy = false;
+  var dashLog = null, dashSeen = null, dashSort = { k: "last", dir: -1 }, dashBusy = false, dashOpen = {};
   function ymd(d){ return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()); }
   function loadDash(){
     if (dashBusy) return;
@@ -1486,16 +1667,21 @@ details.edit .fields{margin-top:6px}
     log.forEach(function(e){
       if (e.ts < from || e.ts > to) return;
       if (f.mat && e.mat !== f.mat) return;
-      var hay = [e.wbs, e.job, e.contractor, e.booking, e.user, e.desc, e.mat].concat(e.labels).join(" ").toLowerCase();
+      var kind = e.wbs ? "ก่อสร้าง" : "ฉุกเฉิน";
+      if (f.kind === "ฉุกเฉิน-ไม่มีใบสั่ง") { if (kind !== "ฉุกเฉิน" || e.net) return; }
+      else if (f.kind && kind !== f.kind) return;
+      var hay = [e.wbs, e.job, e.net, e.contractor, e.booking, e.user, e.desc, e.mat, e.note, kind].concat(e.labels).join(" ").toLowerCase();
       if (q && hay.indexOf(q) < 0) return;
       times++;
-      var k = e.wbs + "|" + e.mat, g = groups[k];
+      var k = e.wbs ? e.wbs + "|" + e.mat : "EMG|" + e.id, g = groups[k];   // every emergency is its own row
       if (!g) {
-        g = groups[k] = { wbs: e.wbs, job: e.job, mat: e.mat, desc: String(e.desc || "").replace(/\s+/g, " ").trim(), n: 0, labels: [],
-                          contractors: [], bookings: [], last: 0, keys: [] };
+        g = groups[k] = { gid: k, kind: kind, note: e.note || "", nets: [], wbs: e.wbs, job: e.job, mat: e.mat, desc: String(e.desc || "").replace(/\s+/g, " ").trim(), n: 0, labels: [],
+                          contractors: [], bookings: [], last: 0, keys: [], trips: [] };
         rows.push(g);
       }
       g.n += e.labels.length;
+      if (e.net && g.nets.indexOf(e.net) < 0) g.nets.push(e.net);
+      g.trips.push({ ts: e.ts, labels: e.labels, user: e.user, pile: e.pile, booking: e.booking });
       g.labels = g.labels.concat(e.labels);
       if (e.contractor && g.contractors.indexOf(e.contractor) < 0) g.contractors.push(e.contractor);
       if (e.booking && g.bookings.indexOf(e.booking) < 0) g.bookings.push(e.booking);
@@ -1505,15 +1691,17 @@ details.edit .fields{margin-top:6px}
       t.n += e.labels.length;
     });
     rows.forEach(function(g){
+      g.trips.sort(function(a, b){ return a.ts - b.ts; });
       var known = g.keys.filter(function(k){ return k in left; });
       g.left = known.length ? known.reduce(function(s, k){ return s + left[k]; }, 0) : null;
     });
-    var wbs = {}; rows.forEach(function(g){ wbs[g.wbs] = 1; });
+    var wbs = {}, emgPoles = 0;
+    rows.forEach(function(g){ if (g.wbs) wbs[g.wbs] = 1; else emgPoles += g.n; });
     return { rows: rows, types: Object.keys(types).map(function(k){ return types[k]; }).sort(function(a, b){ return b.n - a.n; }),
-             poles: rows.reduce(function(s, g){ return s + g.n; }, 0), wbs: Object.keys(wbs).length, times: times };
+             poles: rows.reduce(function(s, g){ return s + g.n; }, 0), wbs: Object.keys(wbs).length, times: times, emg: emgPoles };
   }
   /*DASH-END*/
-  function dashFilter(){ return { from: $("dFrom").value, to: $("dTo").value, mat: $("dType").value, q: $("dQ").value }; }
+  function dashFilter(){ return { from: $("dFrom").value, to: $("dTo").value, mat: $("dType").value, kind: $("dKind").value, q: $("dQ").value }; }
   function renderDash(){
     if (!dashLog) return;
     var sel = $("dType"), keep = sel.value, mats = {};
@@ -1526,7 +1714,7 @@ details.edit .fields{margin-top:6px}
       sel.value = mats[keep] ? keep : "";
     }
     var s = summarize(dashLog, dashFilter(), state.demand);
-    $("kPoles").textContent = s.poles; $("kWbs").textContent = s.wbs; $("kTimes").textContent = s.times;
+    $("kPoles").textContent = s.poles; $("kWbs").textContent = s.wbs; $("kTimes").textContent = s.times; $("kEmg").textContent = s.emg;
     $("kYard").textContent = poles.filter(function(p){ return !p.gone; }).length;
 
     var tb = $("dTypes"); tb.textContent = "";
@@ -1543,28 +1731,51 @@ details.edit .fields{margin-top:6px}
     s.rows.sort(function(a, b){
       var x = a[k], y = b[k];
       if (k === "labels") { x = a.labels.length; y = b.labels.length; }
+      if (k === "trips") { x = a.trips.length; y = b.trips.length; }
       if (k === "contractor") { x = a.contractors.join(","); y = b.contractors.join(","); }
       if (x == null) x = -1; if (y == null) y = -1;
       return (typeof x === "string" ? x.localeCompare(y, "th") : x - y) * dir;
     });
     var body = $("dTable").tBodies[0]; body.textContent = "";
-    if (!s.rows.length) { var tr0 = document.createElement("tr"), td0 = el("td", "empty", "ไม่มีรายการ"); td0.colSpan = 7; tr0.appendChild(td0); body.appendChild(tr0); }
+    if (!s.rows.length) { var tr0 = document.createElement("tr"), td0 = el("td", "empty", "ไม่มีรายการ"); td0.colSpan = 8; tr0.appendChild(td0); body.appendChild(tr0); }
     s.rows.forEach(function(g){
-      var tr = document.createElement("tr");
-      function td(cls, main, sub){ var c = el("td", cls, main); if (sub) c.appendChild(el("span", "sub", sub)); tr.appendChild(c); }
+      var gk = g.gid, open = !!dashOpen[gk];
+      var tr = document.createElement("tr"); tr.className = "grp"; tr.tabIndex = 0;
+      tr.setAttribute("aria-expanded", open ? "true" : "false");
+      tr.title = "แตะเพื่อดูแยกรายรอบ";
+      function td(cls, main, sub){ var c = el("td", cls, main); if (sub) c.appendChild(el("span", "sub", sub)); tr.appendChild(c); return c; }
       td(null, stamp(g.last).slice(0, 10), stamp(g.last).slice(11));
-      td("wbs", g.wbs, g.job || "");
+      var w = td("wbs", (open ? "▾ " : "▸ ") + (g.wbs || "เหตุฉุกเฉิน"), (g.job || "") + (g.note ? " · " + g.note : "") + (g.wbs ? "" : g.nets.length ? " · ใบสั่ง " + g.nets.join(", ") : " · ยังไม่มีใบสั่ง"));
+      if (!g.wbs) tr.classList.add("emg");
       td(null, shortType(g.desc), g.mat);
       td("num", g.n);
+      td("num", g.trips.length);
       td("labels", g.labels.join(", "));
       td(null, g.contractors.join(", ") || "-", g.bookings.join(", "));
       td("num", g.left == null ? "-" : g.left);
+      function toggle(){ dashOpen[gk] = !dashOpen[gk]; renderDash(); }
+      tr.addEventListener("click", toggle);
+      tr.addEventListener("keydown", function(ev){ if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); toggle(); } });
       body.appendChild(tr);
+      if (open) {
+        var dr = document.createElement("tr"); dr.className = "trips";
+        var dc = document.createElement("td"); dc.colSpan = 8;
+        var list = el("div", "triplist");
+        g.trips.forEach(function(t, i){
+          var row = el("div", "tripline");
+          row.appendChild(el("span", "tn", "รอบ " + (i + 1)));
+          row.appendChild(el("span", null, stamp(t.ts)));
+          row.appendChild(el("b", null, t.labels.length + " ต้น: " + t.labels.join(", ")));
+          row.appendChild(el("span", "sub", [t.user, t.pile ? "กอง " + t.pile : "", t.booking].filter(Boolean).join(" · ")));
+          list.appendChild(row);
+        });
+        dc.appendChild(list); dr.appendChild(dc); body.appendChild(dr);
+      }
     });
     var ft = $("dTable").tFoot; ft.textContent = "";
     if (s.rows.length) {
       var fr = document.createElement("tr"), c1 = el("td", null, "รวม " + s.rows.length + " รายการ"); c1.colSpan = 3;
-      fr.appendChild(c1); fr.appendChild(el("td", "num", s.poles)); var c2 = el("td"); c2.colSpan = 3; fr.appendChild(c2);
+      fr.appendChild(c1); fr.appendChild(el("td", "num", s.poles)); fr.appendChild(el("td", "num", s.times)); var c2 = el("td"); c2.colSpan = 3; fr.appendChild(c2);
       ft.appendChild(fr);
     }
     document.querySelectorAll("#dTable th").forEach(function(th){
@@ -1578,7 +1789,7 @@ details.edit .fields{margin-top:6px}
     th.addEventListener("click", go);
     th.addEventListener("keydown", function(ev){ if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); go(); } });
   });
-  ["dFrom", "dTo", "dType"].forEach(function(id){ $(id).addEventListener("change", renderDash); });
+  ["dFrom", "dTo", "dType", "dKind"].forEach(function(id){ $(id).addEventListener("change", renderDash); });
   $("dQ").addEventListener("input", renderDash);
   function setRange(from, to){ $("dFrom").value = from; $("dTo").value = to; renderDash(); }
   $("dAll").addEventListener("click", function(){ setRange("", ""); });
@@ -1589,19 +1800,19 @@ details.edit .fields{margin-top:6px}
   $("dXlsx").addEventListener("click", function(){
     if (!dashLog || !window.XLSX) return;
     var f = dashFilter(), s = summarize(dashLog, f, state.demand);
-    var a = [["เบิกล่าสุด", "องค์ประกอบ WBS", "ชื่องาน", "วัสดุ", "คำอธิบายของวัสดุ", "จำนวน (ต้น)", "เลขเสา", "ผู้รับเหมา", "เลขที่ใบจองพัสดุ", "ยังเบิกได้"]];
-    s.rows.forEach(function(g){ a.push([stamp(g.last), g.wbs, g.job, g.mat, g.desc, g.n, g.labels.join(", "), g.contractors.join(", "), g.bookings.join(", "), g.left == null ? "" : g.left]); });
-    var b = [["วันที่", "เวลา", "ผู้เบิก", "องค์ประกอบ WBS", "ชื่องาน", "ใบสั่ง/โครงข่าย", "วัสดุ", "คำอธิบายของวัสดุ", "เลขที่ใบจองพัสดุ", "ผู้รับเหมา", "กอง", "เลขเสา"]];
+    var a = [["เบิกล่าสุด", "เบิกเพื่อ", "องค์ประกอบ WBS", "ใบสั่ง/โครงข่าย", "ชื่องาน", "วัสดุ", "คำอธิบายของวัสดุ", "จำนวน (ต้น)", "รอบ", "เลขเสา", "ผู้รับเหมา", "เลขที่ใบจองพัสดุ", "ยังเบิกได้"]];
+    s.rows.forEach(function(g){ a.push([stamp(g.last), g.kind, g.wbs, g.nets.join(", "), g.note ? g.job + " · " + g.note : g.job, g.mat, g.desc, g.n, g.trips.length, g.labels.join(", "), g.contractors.join(", "), g.bookings.join(", "), g.left == null ? "" : g.left]); });
+    var b = [["วันที่", "เวลา", "ผู้เบิก", "เบิกเพื่อ", "องค์ประกอบ WBS", "ชื่องาน / เหตุ", "ใบสั่ง/โครงข่าย", "วัสดุ", "คำอธิบายของวัสดุ", "เลขที่ใบจองพัสดุ", "ผู้รับเหมา", "กอง", "เลขเสา", "หมายเหตุ"]];
     dashLog.forEach(function(e){
       var one = summarize([e], f, []);
       if (!one.times) return;
       var t = stamp(e.ts);
-      e.labels.forEach(function(l){ b.push([t.slice(0, 10), t.slice(11), e.user, e.wbs, e.job, e.net, e.mat, e.desc, e.booking, e.contractor, e.pile, l]); });
+      e.labels.forEach(function(l){ b.push([t.slice(0, 10), t.slice(11), e.user, e.wbs ? "ก่อสร้าง" : "ฉุกเฉิน", e.wbs, e.job, e.net, e.mat, e.desc, e.booking, e.contractor, e.pile, l, e.note || ""]); });
     });
     var wb = XLSX.utils.book_new();
     var s1 = XLSX.utils.aoa_to_sheet(a), s2 = XLSX.utils.aoa_to_sheet(b);
-    s1["!cols"] = [16, 24, 36, 15, 28, 11, 40, 20, 16, 11].map(function(w){ return { wch: w }; });
-    s2["!cols"] = [11, 7, 14, 24, 36, 13, 15, 28, 16, 20, 24, 9].map(function(w){ return { wch: w }; });
+    s1["!cols"] = [16, 11, 24, 14, 36, 15, 28, 11, 6, 40, 20, 16, 11].map(function(w){ return { wch: w }; });
+    s2["!cols"] = [11, 7, 14, 10, 24, 36, 13, 15, 28, 16, 20, 24, 9, 24].map(function(w){ return { wch: w }; });
     XLSX.utils.book_append_sheet(wb, s1, "สรุปตาม WBS");
     XLSX.utils.book_append_sheet(wb, s2, "รายต้น");
     var tag = (f.from || "เริ่มต้น") + "_ถึง_" + (f.to || ymd(new Date()));
