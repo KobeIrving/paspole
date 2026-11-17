@@ -101,6 +101,13 @@ button:disabled{opacity:.5;cursor:default}
 .pilebtn:hover{color:inherit}
 .pill{border:1px solid var(--line);border-radius:999px;padding:0 8px;font-size:12.5px;white-space:nowrap}
 .pill.type{border-color:var(--accent);color:var(--accent);font-weight:600}
+.pill.ok{border-color:#2e7d32;color:#2e7d32;font-weight:600}
+.form-row{display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+.form-row .form-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
+.form-row .form-txt b{overflow-wrap:anywhere}
+.form-row .pill{align-self:flex-start;white-space:normal}
+details.more>summary{cursor:pointer;color:var(--muted,inherit);font-size:14px;padding:4px 0}
+details.more>div{display:flex;flex-direction:column;gap:6px;margin-top:6px}
 dl.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:0;font-size:14px}
 dl.kv dt{color:var(--muted)}
 dl.kv dd{margin:0;overflow-wrap:anywhere}
@@ -171,6 +178,11 @@ table.dash tr.trips td{background:var(--bg);padding:6px 10px 10px}
 .segb[aria-checked="true"]{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
 .segb[aria-checked="true"] b{color:var(--accent)}
 .segb:hover{color:inherit}
+.photo-pick{display:flex;flex-direction:column;gap:6px}
+.photo-pick .row-actions{align-items:center}
+.photo-pick > .filebtn{align-self:flex-start}
+.thumb{width:84px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line);background:var(--bg);display:block}
+.thumb.big{width:100%;max-width:320px;height:auto;max-height:220px}
 .orderbox{display:flex;flex-direction:column;gap:6px;border-top:1px dashed var(--line);padding-top:10px;font-size:14px}
 .orderbox .row-actions{flex-wrap:nowrap}
 .orderbox input{flex:1;font-family:var(--font-display);font-variant-numeric:tabular-nums}
@@ -350,6 +362,12 @@ details.edit .fields{margin-top:6px}
         <label class="filebtn primary" id="impBtn">อัปไฟล์ผลลัพธ์ zcn52n (.xlsx)<input type="file" id="inXlsx" accept=".xlsx,.xlsm,.xls"></label>
         <p class="status" id="impStatus" role="status"></p>
         <hr>
+        <h3>ใบเบิก ZPSF009</h3>
+        <p class="note">อัปใบขอเบิกพัสดุที่สั่งพิมพ์จาก SAP เป็น PDF (ยังไม่ต้องเขียนอะไร) ไว้ก่อน แอปจะจับคู่แต่ละหน้ากับ WBS ให้เอง เมื่อช่างกดบันทึกเบิกเสาของงานนั้น แอปจะเติมเลข Booking ผู้รับเหมา จำนวน และเลขเสาลงใบ แล้วออกเป็น PDF ให้ทันที นับเฉพาะเสาที่เบิกตั้งแต่วันที่พิมพ์ในใบ</p>
+        <label class="filebtn primary" id="formBtn">อัปใบเบิกเปล่า (.pdf)<input type="file" id="inForm" accept="application/pdf,.pdf" multiple></label>
+        <p class="status" id="formStatus" role="status"></p>
+        <div id="formsList" class="col"></div>
+        <hr>
         <h3>กองเสา</h3>
         <div class="row-actions">
           <button type="button" id="btnMove">ย้ายกองเสา</button>
@@ -460,6 +478,7 @@ details.edit .fields{margin-top:6px}
   var LOCAL_KEY = "pole-pile-local-v1";
   var COARSE = !!(window.matchMedia && window.matchMedia("(pointer:coarse)").matches);   // finger, not mouse
   var UNDO_MS = 10 * 60000;                     // the person who withdrew can cancel poles themselves this long
+  var PHOTO_MS = 30 * 60000;                    // the person who withdrew can add or change the photo this long
   function mineIds(){ try { return JSON.parse(lsGet("pole-mine") || "[]"); } catch (e) { return []; } }
   function addMine(id){ var m = mineIds().filter(function(x){ return x !== id; }); m.push(id); lsSet("pole-mine", JSON.stringify(m.slice(-30))); }
 
@@ -474,11 +493,13 @@ details.edit .fields{margin-top:6px}
   function localRun(db, req){
     function fail(m){ throw new Error(m); }
     function admin(){ if (String(req.admin || "") !== db.admin) fail("รหัสผู้ดูแลไม่ถูกต้อง (โหมดทดลองใช้ 1234)"); }
+    function dropFiles(){ var used = {}; (db.forms || []).forEach(function(f){ used[f.fileId] = 1; }); Object.keys(db.formFiles || {}).forEach(function(k){ if (!used[k]) delete db.formFiles[k]; }); }
     function view(){
       var used = {};
       db.log.forEach(function(e){ if (e.importId === db.importId) used[e.key] = (used[e.key] || 0) + e.labels.length; });
       db.demand.forEach(function(l){ l.left = Math.max(0, Math.floor(l.remain - (used[l.key] || 0))); });
-      return { importId: db.importId, importInfo: db.importInfo, demand: db.demand, piles: db.piles, log: db.log.slice(-200) };
+      return { importId: db.importId, importInfo: db.importInfo, demand: db.demand, piles: db.piles, log: db.log.slice(-200),
+               forms: db.forms || [] };
     }
     try {
       var a = req.action;
@@ -512,13 +533,21 @@ details.edit .fields{margin-top:6px}
         db.log.push({ id: newId, ts: Date.now(), user: user, wbs: line.wbs, job: line.job, net: line.net, mat: line.mat, desc: line.desc,
           booking: emg ? "" : String(req.booking || "").trim() || line.booking, contractor: emg ? "" : String(req.contractor || "").trim() || line.contractor,
           pile: pile.name, labels: labels, key: line.key, importId: emg ? "" : db.importId,
-          kind: emg ? "ฉุกเฉิน" : "ก่อสร้าง", note: String(req.note || "").trim() });
+          kind: emg ? "ฉุกเฉิน" : "ก่อสร้าง", note: String(req.note || "").trim(), photo: "" });
       } else if (a === "undo") {
         admin();
         var e = db.log.filter(function(x){ return x.id === req.id; })[0];
         if (!e) fail("ไม่พบรายการนี้ อาจถูกยกเลิกไปแล้ว");
         db.piles.forEach(function(p){ if (p.name === e.pile) p.removed = p.removed.filter(function(l){ return e.labels.indexOf(l) < 0; }); });
         db.log.splice(db.log.indexOf(e), 1);
+      } else if (a === "addPhoto") {
+        var pe = db.log.filter(function(x){ return x.id === req.id; })[0];
+        if (!pe) fail("ไม่พบรายการนี้ อาจถูกยกเลิกไปแล้ว");
+        if (String(req.admin || "") !== db.admin) {
+          if (String(req.user || "").trim() !== pe.user) fail("แนบรูปได้เฉพาะรายการที่ตัวเองเบิก");
+          if (Date.now() - pe.ts > PHOTO_MS) fail("เกิน 30 นาทีแล้ว ให้ผู้ดูแลแนบรูปให้");
+        }
+        pe.photo = "data:" + req.mime + ";base64," + req.data;      // trial mode keeps the picture in this browser
       } else if (a === "setOrder") {
         admin();
         var oe = db.log.filter(function(x){ return x.id === req.id; })[0], on = String(req.order || "").replace(/\s+/g, "");
@@ -578,6 +607,25 @@ details.edit .fields{margin-top:6px}
         db.piles = db.piles.filter(function(p){ return picked.indexOf(p) < 0; });
         db.piles.splice(Math.min(at, db.piles.length), 0, merged);
         db.log.forEach(function(e){ if (names.indexOf(e.pile) >= 0) e.pile = name; });
+      } else if (a === "uploadForms") {
+        admin();
+        var fp = (req.pages || []).filter(function(q){ return q && String(q.wbs || "").trim(); });
+        if (!req.data) fail("ไม่มีไฟล์");
+        if (!fp.length) fail("ไม่พบเลขใบสั่งงาน (WBS) ในไฟล์นี้");
+        var fid = "local" + Date.now().toString(36), fw = fp.map(function(q){ return String(q.wbs).trim(); });
+        db.formFiles = db.formFiles || {}; db.formFiles[fid] = req.data;              // trial mode keeps the PDF in this browser
+        db.forms = (db.forms || []).filter(function(f){ return fw.indexOf(f.wbs) < 0; });
+        fp.forEach(function(q){ db.forms.push({ wbs: String(q.wbs).trim(), net: q.net || "", reserve: q.reserve || "", date: q.date || "", fileId: fid, page: Number(q.page) || 1,
+          name: String(req.name || ""), at: new Date().toLocaleString("sv-SE").slice(0, 16), ts: Date.now(), layout: q.layout || null }); });
+        dropFiles();
+      } else if (a === "deleteForm") {
+        admin();
+        db.forms = (db.forms || []).filter(function(f){ return f.wbs !== req.wbs; });
+        dropFiles();
+      } else if (a === "getForm") {
+        var fd = (db.formFiles || {})[req.fileId];
+        if (!fd || !(db.forms || []).some(function(f){ return f.fileId === req.fileId; })) fail("ไม่พบใบเบิกเปล่านี้ ผู้ดูแลอาจลบหรืออัปใหม่แล้ว");
+        return { ok: true, data: fd };
       } else if (a === "checkAdmin") admin();
       else if (a === "log") return { ok: true, state: view(), log: db.log };
       return { ok: true, state: view(), id: newId };
@@ -597,14 +645,14 @@ details.edit .fields{margin-top:6px}
     return Promise.resolve(JSON.parse(JSON.stringify(res)));
   }
 
-  var state = { importId: "", importInfo: "", demand: [], piles: [], log: [] };
+  var state = { importId: "", importInfo: "", demand: [], piles: [], log: [], forms: [] };
   var pileSig = null, busy = false, loaded = false;
   var settle = lsGet("pole-settle") !== "0";
 
   // every server answer carries the whole state; show it
   var BUSY_TEXT = { withdraw: "กำลังบันทึกการเบิก", undo: "กำลังยกเลิกรายการ", undoPoles: "กำลังยกเลิกเสา", upload: "กำลังอัปข้อมูล WBS",
     addPile: "กำลังสร้างกองเสา", deletePile: "กำลังลบกอง", mergePiles: "กำลังรวมกอง", setPositions: "กำลังบันทึกตำแหน่งกอง",
-    setOrder: "กำลังบันทึกเลขที่ใบสั่ง", checkAdmin: "กำลังตรวจรหัสผู้ดูแล" };
+    setOrder: "กำลังบันทึกเลขที่ใบสั่ง", addPhoto: "กำลังส่งรูป", uploadForms: "กำลังอัปใบเบิกเปล่า", deleteForm: "กำลังลบใบเบิกเปล่า", getForm: "กำลังเตรียมใบเบิก", checkAdmin: "กำลังตรวจรหัสผู้ดูแล" };
   // a small spinning pill while something the user pressed is on its way; the 20-second refresh stays silent
   var busyCount = 0;
   function busyOn(text){
@@ -960,7 +1008,7 @@ details.edit .fields{margin-top:6px}
   }
 
   function applyState(s){
-    state = s;
+    state = s; if (!state.forms) state.forms = [];
     state.demand.forEach(function(l){ if (l.mat && l.desc) types[l.mat] = l.desc; });
     var sig = JSON.stringify(state.piles.map(function(p){ return [p.name, p.mat, p.rows, p.pos || 0]; }));
     var rebuilt = sig !== pileSig;
@@ -1120,7 +1168,9 @@ details.edit .fields{margin-top:6px}
         hd.appendChild(el("time", null, stamp(e.ts).slice(11)));
         c.appendChild(hd);
         c.appendChild(el("p", "note", (e.wbs || "เหตุฉุกเฉิน · " + e.job) + " · " + shortType(e.desc) + " · กอง " + e.pile));
+        var pb = photoBox(e); if (pb) c.appendChild(pb);
         var ub = undoBox(e); if (ub) c.appendChild(ub);
+        var fb = formButton(e.wbs); if (fb) { var fr = el("div", "row-actions"); fr.appendChild(fb); c.appendChild(fr); }
         box.appendChild(c);
       });
       if (!state.demand.length) box.appendChild(el("p", "status err", "ยังไม่มีข้อมูล WBS ให้ผู้ดูแลอัปไฟล์ผลลัพธ์ zcn52n ในแท็บ ผู้ดูแล"));
@@ -1242,6 +1292,7 @@ details.edit .fields{margin-top:6px}
       card.appendChild(el("p", "note", "เรียงเหมือนหน้ากองจริง ชั้นบนสุดอยู่บน แตะเลขเสา หรือแตะเสาในภาพ 3D"));
       card.appendChild(poleGrid(run));
 
+      card.appendChild(photoPicker());
       var known = lsGet("pole-user"), who = el("div", "whoami");                                 // who is withdrawing
       var lu = el("label", null, "ชื่อผู้เบิก"); lu.htmlFor = "actUser";
       var iu = document.createElement("input"); iu.type = "text"; iu.id = "actUser"; iu.maxLength = 60; iu.value = known;
@@ -1305,7 +1356,292 @@ details.edit .fields{margin-top:6px}
     return i;
   }
   function clearSt(){ var s = $("actStatus"); if (s && s.classList.contains("err")) { s.textContent = ""; s.classList.remove("err"); } }
-  function cancelW(){ wz = null; frame(null); paint(); renderW(); }
+  function cancelW(){ if (wz && wz.photo) URL.revokeObjectURL(wz.photo.url); wz = null; frame(null); paint(); renderW(); }
+
+  /* ---------- one optional photo per withdrawal ---------- */
+  function photoSrc(p){ return p.indexOf("data:") === 0 ? p : "https://drive.google.com/thumbnail?id=" + encodeURIComponent(p) + "&sz=w800"; }
+  function photoLink(p){ return p.indexOf("data:") === 0 ? p : "https://drive.google.com/file/d/" + encodeURIComponent(p) + "/view"; }
+  function fileButton(text, onFile){
+    var lab = el("label", "filebtn small", text), inp = document.createElement("input");
+    inp.type = "file"; inp.accept = "image/*"; inp.setAttribute("capture", "environment");
+    inp.addEventListener("change", function(){ var f = inp.files && inp.files[0]; inp.value = ""; if (f) onFile(f); });
+    lab.appendChild(inp); return lab;
+  }
+  // picker inside the withdraw form; the picture is sent after the withdrawal is saved
+  function photoPicker(){
+    var box = el("div", "photo-pick");
+    box.appendChild(el("span", "sublabel", "รูปเสาที่เบิก (ไม่บังคับ)"));
+    var row = el("div", "row-actions");
+    if (wz.photo) {
+      var im = document.createElement("img"); im.className = "thumb"; im.src = wz.photo.url; im.alt = "รูปที่จะแนบ";
+      row.appendChild(im);
+      row.appendChild(fileButton("ถ่ายใหม่", setPick));
+      var rm = el("button", "small", "ไม่แนบรูป"); rm.type = "button";
+      rm.addEventListener("click", function(){ URL.revokeObjectURL(wz.photo.url); wz.photo = null; renderW(); });
+      row.appendChild(rm);
+    } else row.appendChild(fileButton("ถ่ายรูปหรือเลือกรูป", setPick));
+    box.appendChild(row);
+    function setPick(f){ if (wz.photo) URL.revokeObjectURL(wz.photo.url); wz.photo = { file: f, url: URL.createObjectURL(f) }; renderW(); }
+    return box;
+  }
+  function uploadPhoto(id, file, afterSave){
+    var user = lsGet("pole-user");
+    return shrink(file, 1600, 0.85).then(function(img){
+      return request({ action: "addPhoto", id: id, user: user, admin: $("inAdmin").value, mime: img.mime, data: img.data }, true);
+    }).then(function(){ toast("แนบรูปแล้ว"); }, function(e){
+      toast((afterSave ? "บันทึกการเบิกแล้ว แต่ส่งรูปไม่สำเร็จ: " : "ส่งรูปไม่สำเร็จ: ") + (e && e.message || "") + (afterSave ? " แนบใหม่ได้ในแท็บประวัติ" : ""));
+    });
+  }
+  function canPhoto(e){ return !!$("inAdmin").value || (mineIds().indexOf(e.id) >= 0 && e.user === lsGet("pole-user") && Date.now() - e.ts < PHOTO_MS); }
+  // photo on a history card: the picture if there is one, and a button to add or change it while allowed
+  function photoBox(e){
+    var can = canPhoto(e);
+    if (!e.photo && !can) return null;
+    var box = el("div", "photo-pick");
+    if (e.photo) {
+      var a = document.createElement("a"); a.href = photoLink(e.photo); a.target = "_blank"; a.rel = "noopener"; a.title = "เปิดรูปเต็ม";
+      var im = document.createElement("img"); im.className = "thumb big"; im.loading = "lazy"; im.src = photoSrc(e.photo); im.alt = "รูปเสาที่เบิก " + e.labels.join(", ");
+      im.onerror = function(){ a.textContent = "เปิดรูป"; };
+      a.appendChild(im); box.appendChild(a);
+    }
+    if (can) box.appendChild(fileButton(e.photo ? "เปลี่ยนรูป" : "แนบรูป", function(f){ uploadPhoto(e.id, f, false); }));
+    return box;
+  }
+
+  /* ---------- ZPSF009 withdrawal forms ---------- */
+  // The admin uploads the blank form printed from SAP; after poles are withdrawn the app writes the booking, contractor,
+  // how many and which poles onto that page in blue "ink" and hands back a PDF.
+  var LIB = { pdfjs: "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js",
+              pdflib: "https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" };
+  var libWait = {};
+  function needLib(url, name){
+    if (window[name]) return Promise.resolve(window[name]);
+    if (!libWait[url]) libWait[url] = new Promise(function(ok, no){
+      var sc = document.createElement("script"); sc.src = url; sc.async = true;
+      sc.onload = function(){ if (window[name]) ok(window[name]); else { delete libWait[url]; no(new Error("โหลดตัวจัดการ PDF ไม่สำเร็จ")); } };
+      sc.onerror = function(){ delete libWait[url]; sc.remove(); no(new Error("โหลดตัวจัดการ PDF ไม่สำเร็จ ตรวจอินเทอร์เน็ตแล้วลองใหม่")); };
+      document.head.appendChild(sc);
+    });
+    return libWait[url];
+  }
+  function bytesB64(u8){ var s = "", i; for (i = 0; i < u8.length; i += 32768) s += String.fromCharCode.apply(null, u8.subarray(i, i + 32768)); return btoa(s); }
+  function b64Bytes(b64){ var s = atob(b64), u8 = new Uint8Array(s.length); for (var i = 0; i < s.length; i++) u8[i] = s.charCodeAt(i); return u8; }
+  /*FORM-START*/
+  function zClean(t){ return String(t).replace(/[\sÉ◌]/g, ""); }
+  // one page of a ZPSF009 printout (text pieces with their x, y) -> the job it is for and where things sit on the page
+  function readZpsf(items, w, h){
+    var lines = [];
+    items.forEach(function(it){
+      if (!String(it.str).trim()) return;
+      var l = lines.filter(function(q){ return Math.abs(q.y - it.y) < 2; })[0];
+      if (!l) { l = { y: it.y, parts: [] }; lines.push(l); }
+      l.parts.push(it);
+    });
+    lines.sort(function(a, b){ return b.y - a.y; });
+    lines.forEach(function(l){ l.text = zClean(l.parts.sort(function(a, b){ return a.x - b.x; }).map(function(p){ return p.str; }).join("")); });
+    var out = { wbs: "", net: "", reserve: "", date: "", layout: { w: w, h: h, head: lines.length ? Math.round(lines[0].y) : h - 36, sig: 0, rows: [] } };
+    lines.forEach(function(l){
+      var m;
+      if (!out.wbs && (m = l.text.match(/[A-Z]-\d{2}-[A-Z]-[A-Z0-9]{3,}(?:\.[A-Z0-9]+)+/))) out.wbs = m[0];
+      if (!out.net && (m = l.text.match(/โครงข่าย(\d{6,})/))) out.net = m[1];
+      if (!out.reserve && (m = l.text.match(/ใบจอง(\d{6,})/))) out.reserve = m[1];
+      if (!out.date && (m = l.text.match(/\d{2}\.\d{2}\.\d{4}/))) out.date = m[0];
+      if ((m = l.text.match(/\d-\d{2}-\d{3}-\d{4}/)) && !out.layout.rows.some(function(r){ return r.mat === m[0]; })) out.layout.rows.push({ mat: m[0], y: Math.round(l.y) });
+      if (!out.layout.sig && /ตรวจสอบ/.test(l.text)) out.layout.sig = Math.round(l.y);
+    });
+    if (!out.layout.sig) out.layout.sig = out.layout.rows.length ? out.layout.rows[out.layout.rows.length - 1].y - 50 : Math.round(h / 2);
+    return out;
+  }
+  function normNet(v){ return String(v || "").replace(/\D/g, "").replace(/^0+/, ""); }
+  // the WBS in the app that a page belongs to: same WBS, else same network number, else one WBS starting with the other
+  function matchWbs(p, demand){
+    var hit = demand.filter(function(l){ return p.wbs && l.wbs === p.wbs; })[0]
+      || demand.filter(function(l){ return p.net && normNet(l.net) === normNet(p.net); })[0]
+      || demand.filter(function(l){ return p.wbs && (l.wbs.indexOf(p.wbs) === 0 || p.wbs.indexOf(l.wbs) === 0); })[0];
+    return hit ? hit.wbs : "";
+  }
+  function dayStart(d){ var m = String(d || "").match(/(\d{2})\.(\d{2})\.(\d{4})/); return m ? new Date(+m[3], +m[2] - 1, +m[1]).getTime() : 0; }
+  // what to write on a form: poles withdrawn for its WBS from the day printed on it, per material row
+  function formPlan(form, log, demand){
+    var from = dayStart(form.date), lay = form.layout || { rows: [] };
+    var es = log.filter(function(e){ return e.wbs && e.wbs === form.wbs && e.ts >= from; }).sort(function(a, b){ return a.ts - b.ts; });
+    var lines = demand.filter(function(l){ return l.wbs === form.wbs; });
+    function pick(f){ for (var i = es.length - 1; i >= 0; i--) if (es[i][f]) return es[i][f]; for (i = 0; i < lines.length; i++) if (lines[i][f]) return lines[i][f]; return ""; }
+    var rows = (lay.rows || []).map(function(r){
+      var labels = []; es.forEach(function(e){ if (e.mat === r.mat) labels = labels.concat(e.labels); });
+      return { mat: r.mat, y: r.y, labels: labels };
+    });
+    var stray = es.filter(function(e){ return !rows.some(function(r){ return r.mat === e.mat; }); }).length;
+    return { booking: pick("booking"), contractor: pick("contractor"), rows: rows, stray: stray,
+             total: rows.reduce(function(n, r){ return n + r.labels.length; }, 0) };
+  }
+  /*FORM-END*/
+  function formOf(wbs){ return wbs ? (state.forms || []).filter(function(f){ return f.wbs === wbs; })[0] || null : null; }
+  // text drawn by the browser (so Thai shapes correctly), turned into a picture for the PDF
+  function inkPng(lines, pt, bold){
+    var k = 4, font = (bold ? "700 " : "500 ") + (pt * k) + "px " + (cssVar("--font-body") || "sans-serif");
+    var c = document.createElement("canvas"), g = c.getContext("2d"); g.font = font;
+    var lh = pt * 1.45 * k, w = Math.max.apply(null, lines.map(function(t){ return g.measureText(t).width; })) + 2 * k;
+    c.width = Math.ceil(w); c.height = Math.ceil(lh * (lines.length - 1) + pt * 1.45 * k);
+    g.font = font; g.fillStyle = "#1b3a9a"; g.textBaseline = "alphabetic";
+    lines.forEach(function(t, i){ g.fillText(t, k, pt * k * 1.08 + i * lh); });
+    return { url: c.toDataURL("image/png"), w: c.width / k, h: c.height / k, base: c.height / k - pt * 1.08 };
+  }
+  var formBytes = {};
+  function getFormBytes(fileId){
+    if (formBytes[fileId]) return Promise.resolve(formBytes[fileId]);
+    var done = busyOn(BUSY_TEXT.getForm);
+    return call({ action: "getForm", fileId: fileId }).then(function(res){
+      done();
+      if (!res || !res.ok) throw new Error(res && res.error || "โหลดใบเบิกเปล่าไม่สำเร็จ");
+      return (formBytes[fileId] = b64Bytes(res.data));
+    }, function(e){ done(); throw new Error(e && e.message && !/fetch/i.test(e.message) ? e.message : "เชื่อมต่อ Google Sheet ไม่ได้ ตรวจอินเทอร์เน็ตแล้วลองใหม่"); });
+  }
+  function buildFormPdf(form){
+    var plan = formPlan(form, state.log, state.demand);
+    var fonts = document.fonts && document.fonts.load ? document.fonts.load("700 12px " + cssVar("--font-body")).catch(function(){}) : null;
+    return Promise.all([needLib(LIB.pdflib, "PDFLib"), getFormBytes(form.fileId), fonts]).then(function(r){
+      var L = r[0];
+      return Promise.all([L.PDFDocument.load(r[1]), L.PDFDocument.create()]).then(function(d){
+        var src = d[0], doc = d[1];
+        return doc.copyPages(src, [Math.min(form.page, src.getPageCount()) - 1]).then(function(pp){
+          var page = doc.addPage(pp[0]), sz = page.getSize(), lay = form.layout || {}, sx = sz.width / 792, jobs = [];
+          function put(lines, pt, bold, maxW, place){
+            var im = inkPng(lines, pt, bold), k = Math.min(1, maxW / im.w);
+            jobs.push(doc.embedPng(im.url).then(function(png){
+              var at = place(im.w * k, im.h * k, im.base * k);
+              page.drawImage(png, { x: at[0], y: at[1], width: im.w * k, height: im.h * k });
+            }));
+          }
+          var head = [plan.booking, plan.contractor].filter(Boolean);           // top right, beside the date
+          if (head.length) put(head, 13, true, 200 * sx, function(w, h){ return [665 * sx - w, Math.min(sz.height - 3, (lay.head || sz.height - 36) + 16) - h]; });
+          plan.rows.forEach(function(row){                                      // the "จำนวนเบิกครั้งนี้" column
+            if (row.labels.length) put([String(row.labels.length)], 11, true, 70 * sx, function(w, h, base){ return [552 * sx - w, row.y - base]; });
+          });
+          var blocks = plan.rows.filter(function(row){ return row.labels.length; }), many = blocks.length > 1;
+          if (blocks.length) {                                                  // the pole numbers, under the signatures
+            var top = (lay.sig || 300) - 38, room = top - 14, left = 345 * sx, per = 10, pt = 12;
+            var text = function(){
+              var out = [];
+              blocks.forEach(function(row){
+                out.push("เลขเสา" + (many ? " " + shortType(types[row.mat] || row.mat) : "") + " " + row.labels.length + " ต้น");
+                for (var i = 0; i < row.labels.length; i += per) out.push(row.labels.slice(i, i + per).join(", "));
+              });
+              return out;
+            };
+            var ls = text();
+            if (ls.length * pt * 1.45 > room) { left = 30 * sx; per = 16; ls = text(); }
+            while (ls.length * pt * 1.45 > room && pt > 6) pt -= 1;
+            put(ls, pt, false, sz.width - left - 16, function(w, h){ return [left, top - h]; });
+          }
+          return Promise.all(jobs).then(function(){ return doc.save(); });
+        });
+      });
+    });
+  }
+  function saveBlob(bytes, name){
+    var url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })), a = document.createElement("a");
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
+  }
+  function makeForm(wbs, auto){
+    var f = formOf(wbs);
+    if (!f) return Promise.resolve(false);
+    if (!formPlan(f, state.log, state.demand).total) { toast("งาน " + wbs + " ยังไม่มีเสาที่เบิกตั้งแต่วันที่ " + (f.date || "ในใบ")); return Promise.resolve(false); }
+    return buildFormPdf(f).then(function(bytes){
+      saveBlob(bytes, "ใบเบิก_" + wbs + "_" + new Date().toLocaleString("sv-SE").slice(0, 10) + ".pdf");
+      var plan = formPlan(f, state.log, state.demand);
+      toast((auto ? "บันทึกแล้ว และออกใบเบิก PDF ให้แล้ว " : "ออกใบเบิก PDF แล้ว ") + wbs + " รวม " + plan.total + " ต้น" +
+            (plan.stray ? " (มีเสาชนิดที่ไม่อยู่ในใบ " + plan.stray + " รายการ ไม่ได้ใส่)" : ""));
+      return true;
+    }, function(e){
+      toast("ออกใบเบิก PDF ไม่สำเร็จ: " + e.message + (auto ? " กดออกใหม่ได้ในแท็บประวัติ" : ""));
+      return false;
+    });
+  }
+  function formButton(wbs){
+    if (!formOf(wbs)) return null;
+    var b = el("button", "small", "ใบเบิก PDF"); b.type = "button";
+    b.addEventListener("click", function(){ b.disabled = true; makeForm(wbs).then(function(){ b.disabled = false; }); });
+    return b;
+  }
+  function readFormFile(file){
+    return Promise.all([needLib(LIB.pdfjs, "pdfjsLib"), file.arrayBuffer()]).then(function(r){
+      var lib = r[0], buf = r[1], u8 = new Uint8Array(buf);
+      if (String.fromCharCode.apply(null, u8.subarray(0, 5)) !== "%PDF-") throw new Error(file.name + ": ไม่ใช่ไฟล์ PDF");
+      var data = bytesB64(u8);
+      lib.GlobalWorkerOptions.workerSrc = LIB.pdfjs.replace("pdf.min.js", "pdf.worker.min.js");
+      return lib.getDocument({ data: u8.slice() }).promise.then(function(doc){
+        var pages = [], n = 0;
+        function one(){
+          if (++n > doc.numPages) return Promise.resolve();
+          return doc.getPage(n).then(function(pg){
+            var vp = pg.getViewport({ scale: 1 });
+            return pg.getTextContent().then(function(tc){
+              var p = readZpsf(tc.items.map(function(it){ return { str: it.str, x: it.transform[4], y: it.transform[5] }; }), vp.width, vp.height);
+              p.page = n; p.found = p.wbs;
+              var w = matchWbs(p, state.demand); p.known = !!w; if (w) p.wbs = w;
+              pages.push(p); return one();
+            });
+          });
+        }
+        return one().then(function(){ return { data: data, pages: pages }; });
+      });
+    });
+  }
+  $("inForm").addEventListener("change", function(){
+    var files = Array.from(this.files || []); this.value = "";
+    if (!files.length) return;
+    var code = adminCode(); if (!code) return;
+    var st = $("formStatus"), said = [], i = 0;
+    st.classList.remove("err"); st.textContent = "กำลังอ่านไฟล์";
+    (function next(){
+      if (i >= files.length) { st.textContent = said.join(" · "); return; }
+      var f = files[i++];
+      readFormFile(f).then(function(r){
+        var pages = r.pages.filter(function(p){ return p.wbs; });
+        if (!pages.length) throw new Error(f.name + ": ไม่พบเลขใบสั่งงาน ต้องเป็น PDF ที่สั่งพิมพ์จาก SAP (ZPSF009) ไม่ใช่รูปถ่ายหรือสแกน");
+        var miss = pages.filter(function(p){ return !p.known; });
+        return request({ action: "uploadForms", admin: code, name: f.name, data: r.data, pages: pages }, true).then(function(){
+          said.push(f.name + ": " + pages.length + " หน้า " + pages.map(function(p){ return p.wbs; }).join(", ") +
+            (miss.length ? " (" + miss.length + " หน้าไม่ตรงกับ WBS ปัจจุบัน เก็บไว้ตามเลขในใบ)" : ""));
+        });
+      }).then(next, function(e){ st.classList.add("err"); st.textContent = (said.length ? said.join(" · ") + " · " : "") + e.message; });
+    })();
+  });
+  // admin list: every job in the WBS data, the ones with a blank form first
+  function renderForms(){
+    var box = $("formsList"); box.textContent = "";
+    var jobs = {}, order = [];
+    state.demand.forEach(function(l){ if (!jobs[l.wbs]) { jobs[l.wbs] = { wbs: l.wbs, job: l.job }; order.push(l.wbs); } });
+    (state.forms || []).forEach(function(f){ if (!jobs[f.wbs]) { jobs[f.wbs] = { wbs: f.wbs, job: "", gone: true }; order.push(f.wbs); } });
+    if (!order.length) return;
+    var have = order.filter(formOf), lack = order.filter(function(w){ return !formOf(w); });
+    box.appendChild(el("p", "note", "มีใบเปล่าแล้ว " + have.length + " จาก " + order.length + " งาน"));
+    function row(w){
+      var j = jobs[w], f = formOf(w), r = el("div", "form-row"), t = el("div", "form-txt");
+      t.appendChild(el("b", null, w));
+      if (j.job || j.gone) t.appendChild(el("span", "note", j.job || "ไม่อยู่ในข้อมูล WBS ล่าสุดแล้ว"));
+      t.appendChild(el("span", f ? "pill ok" : "pill", f ? "มีใบเปล่า · " + f.name + " หน้า " + f.page + " · วันที่ในใบ " + (f.date || "-") : "ยังไม่มีใบเปล่า"));
+      r.appendChild(t);
+      if (f) {
+        var a = el("div", "row-actions"); a.appendChild(formButton(w));
+        var d = el("button", "small", "ลบใบเปล่า"); d.type = "button";
+        twoStep(d, "ลบใบเปล่า", function(){
+          var code = adminCode(); if (!code) return;
+          request({ action: "deleteForm", admin: code, wbs: w }).then(function(){ toast("ลบใบเปล่าของ " + w + " แล้ว"); }, function(){});
+        });
+        a.appendChild(d); r.appendChild(a);
+      }
+      return r;
+    }
+    have.forEach(function(w){ box.appendChild(row(w)); });
+    if (lack.length) {
+      var det = el("details", "more"), sum = el("summary", null, "งานที่ยังไม่มีใบเปล่า " + lack.length + " งาน"), inner = el("div");
+      det.open = !!box._open; det.addEventListener("toggle", function(){ box._open = det.open; });
+      det.appendChild(sum); lack.forEach(function(w){ inner.appendChild(row(w)); }); det.appendChild(inner); box.appendChild(det);
+    }
+  }
 
   /* ---------- install on the home screen ---------- */
   var installEvt = null;
@@ -1354,11 +1690,12 @@ details.edit .fields{margin-top:6px}
       ? { action: "withdraw", kind: "emergency", user: user, pile: wz.pile, labels: Array.from(wz.sel), cause: wz.cause, place: wz.place.trim(), note: wz.note.trim(), order: wz.order,
           desc: types[(runOf(wz.pile) || {}).mat] || "" }
       : { action: "withdraw", user: user, pile: wz.pile, key: wz.key, labels: Array.from(wz.sel), booking: wz.booking, contractor: wz.contractor };
-    var wbs = emg ? "เหตุฉุกเฉิน " + wz.cause : line.wbs, keep = wz;
+    var wbs = emg ? "เหตุฉุกเฉิน " + wz.cause : line.wbs, keep = wz, photo = wz.photo;
     wz = null; justSaved = true;
     request(req, true).then(function(res){
-      if (res && res.id) { addMine(res.id); renderW(); renderHistory(); }
+      if (res && res.id) { addMine(res.id); renderW(); renderHistory(); if (photo) uploadPhoto(res.id, photo.file, true); }
       frame(null); toast("บันทึกแล้ว เบิก " + n + " ต้น ให้ " + wbs + " ถ้าเบิกผิด ยกเลิกเองได้ภายใน 10 นาที");
+      if (!emg && formOf(line.wbs)) makeForm(line.wbs, true);                 // a blank ZPSF009 is waiting for this job: fill it in
     }, function(e){
       justSaved = false; wz = keep;
       var run = runOf(wz.pile);
@@ -1467,6 +1804,7 @@ details.edit .fields{margin-top:6px}
       });
       card.appendChild(dl);
       card.appendChild(el("div", "labels", "เลขเสา " + e.labels.join(", ")));
+      var pb = photoBox(e); if (pb) card.appendChild(pb);
       var ob = orderBox(e); if (ob) card.appendChild(ob);
       var ub = undoBox(e); if (ub) card.appendChild(ub);
       var b = el("button", "small", "ยกเลิกรายการนี้ (ผู้ดูแล)"); b.type = "button";
@@ -1474,7 +1812,7 @@ details.edit .fields{margin-top:6px}
         if (!$("inAdmin").value) { toast("ใส่รหัสผู้ดูแลในแท็บ ผู้ดูแล ก่อน"); return; }
         request({ action: "undo", id: e.id, admin: $("inAdmin").value }).then(function(){ toast("ยกเลิกรายการแล้ว เสากลับเข้ากอง"); }, function(){});
       });
-      var a = el("div", "row-actions"); a.appendChild(b); card.appendChild(a);
+      var a = el("div", "row-actions"), fb = formButton(e.wbs); if (fb) a.appendChild(fb); a.appendChild(b); card.appendChild(a);
       box.appendChild(card);
     });
   }
@@ -1485,6 +1823,7 @@ details.edit .fields{margin-top:6px}
     $("impInfo").textContent = state.demand.length
       ? "ไฟล์ล่าสุด: " + state.importInfo + " · " + state.demand.length + " รายการ"
       : "ยังไม่มีข้อมูล WBS";
+    renderForms();
     pilesAdminEl.textContent = "";
     runs.forEach(function(run){
       var c = el("div", "card"), h = el("div", "card-head");
@@ -1610,15 +1949,15 @@ details.edit .fields{margin-top:6px}
     }, function(e){ setStatus(e.message, true); });
   });
   /* ---------- read pole numbers from a photo (Gemini, through the sheet script) ---------- */
-  function shrink(file){
+  function shrink(file, maxSide, quality){
     function b64(blob){ return new Promise(function(res, rej){ var fr = new FileReader(); fr.onload = function(){ res({ mime: blob.type || "image/jpeg", data: String(fr.result).split(",")[1] }); }; fr.onerror = rej; fr.readAsDataURL(blob); }); }
     if (!window.createImageBitmap) return b64(file);
     return createImageBitmap(file).then(function(bmp){
-      var s = Math.min(1, 2200 / Math.max(bmp.width, bmp.height));
+      var s = Math.min(1, (maxSide || 2200) / Math.max(bmp.width, bmp.height));
       var c = document.createElement("canvas");
       c.width = Math.round(bmp.width * s); c.height = Math.round(bmp.height * s);
       c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
-      return new Promise(function(res){ c.toBlob(function(b){ res(b || file); }, "image/jpeg", 0.88); });
+      return new Promise(function(res){ c.toBlob(function(b){ res(b || file); }, "image/jpeg", quality || 0.88); });
     }, function(){ return file; }).then(b64);
   }
   var reading = false;
@@ -1832,7 +2171,7 @@ details.edit .fields{margin-top:6px}
       }
       g.n += e.labels.length;
       if (e.net && g.nets.indexOf(e.net) < 0) g.nets.push(e.net);
-      g.trips.push({ ts: e.ts, labels: e.labels, user: e.user, pile: e.pile, booking: e.booking });
+      g.trips.push({ ts: e.ts, labels: e.labels, user: e.user, pile: e.pile, booking: e.booking, photo: e.photo || "" });
       g.labels = g.labels.concat(e.labels);
       if (e.contractor && g.contractors.indexOf(e.contractor) < 0) g.contractors.push(e.contractor);
       if (e.booking && g.bookings.indexOf(e.booking) < 0) g.bookings.push(e.booking);
@@ -1917,7 +2256,13 @@ details.edit .fields{margin-top:6px}
           row.appendChild(el("span", "tn", "รอบ " + (i + 1)));
           row.appendChild(el("span", null, stamp(t.ts)));
           row.appendChild(el("b", null, t.labels.length + " ต้น: " + t.labels.join(", ")));
-          row.appendChild(el("span", "sub", [t.user, t.pile ? "กอง " + t.pile : "", t.booking].filter(Boolean).join(" · ")));
+          var sub = el("span", "sub", [t.user, t.pile ? "กอง " + t.pile : "", t.booking].filter(Boolean).join(" · "));
+          if (t.photo) {
+            var pl = document.createElement("a"); pl.href = photoLink(t.photo); pl.target = "_blank"; pl.rel = "noopener"; pl.textContent = "ดูรูป";
+            pl.addEventListener("click", function(ev){ ev.stopPropagation(); });
+            sub.appendChild(document.createTextNode(" · ")); sub.appendChild(pl);
+          }
+          row.appendChild(sub);
           list.appendChild(row);
         });
         dc.appendChild(list); dr.appendChild(dc); body.appendChild(dr);
@@ -1953,17 +2298,17 @@ details.edit .fields{margin-top:6px}
     var f = dashFilter(), s = summarize(dashLog, f, state.demand);
     var a = [["เบิกล่าสุด", "เบิกเพื่อ", "องค์ประกอบ WBS", "ใบสั่ง/โครงข่าย", "ชื่องาน", "วัสดุ", "คำอธิบายของวัสดุ", "จำนวน (ต้น)", "รอบ", "เลขเสา", "ผู้รับเหมา", "เลขที่ใบจองพัสดุ", "ยังเบิกได้"]];
     s.rows.forEach(function(g){ a.push([stamp(g.last), g.kind, g.wbs, g.nets.join(", "), g.note ? g.job + " · " + g.note : g.job, g.mat, g.desc, g.n, g.trips.length, g.labels.join(", "), g.contractors.join(", "), g.bookings.join(", "), g.left == null ? "" : g.left]); });
-    var b = [["วันที่", "เวลา", "ผู้เบิก", "เบิกเพื่อ", "องค์ประกอบ WBS", "ชื่องาน / เหตุ", "ใบสั่ง/โครงข่าย", "วัสดุ", "คำอธิบายของวัสดุ", "เลขที่ใบจองพัสดุ", "ผู้รับเหมา", "กอง", "เลขเสา", "หมายเหตุ"]];
+    var b = [["วันที่", "เวลา", "ผู้เบิก", "เบิกเพื่อ", "องค์ประกอบ WBS", "ชื่องาน / เหตุ", "ใบสั่ง/โครงข่าย", "วัสดุ", "คำอธิบายของวัสดุ", "เลขที่ใบจองพัสดุ", "ผู้รับเหมา", "กอง", "เลขเสา", "หมายเหตุ", "รูป"]];
     dashLog.forEach(function(e){
       var one = summarize([e], f, []);
       if (!one.times) return;
       var t = stamp(e.ts);
-      e.labels.forEach(function(l){ b.push([t.slice(0, 10), t.slice(11), e.user, e.wbs ? "ก่อสร้าง" : "ฉุกเฉิน", e.wbs, e.job, e.net, e.mat, e.desc, e.booking, e.contractor, e.pile, l, e.note || ""]); });
+      e.labels.forEach(function(l){ b.push([t.slice(0, 10), t.slice(11), e.user, e.wbs ? "ก่อสร้าง" : "ฉุกเฉิน", e.wbs, e.job, e.net, e.mat, e.desc, e.booking, e.contractor, e.pile, l, e.note || "", e.photo && e.photo.indexOf("data:") !== 0 ? photoLink(e.photo) : ""]); });
     });
     var wb = XLSX.utils.book_new();
     var s1 = XLSX.utils.aoa_to_sheet(a), s2 = XLSX.utils.aoa_to_sheet(b);
     s1["!cols"] = [16, 11, 24, 14, 36, 15, 28, 11, 6, 40, 20, 16, 11].map(function(w){ return { wch: w }; });
-    s2["!cols"] = [11, 7, 14, 10, 24, 36, 13, 15, 28, 16, 20, 24, 9, 24].map(function(w){ return { wch: w }; });
+    s2["!cols"] = [11, 7, 14, 10, 24, 36, 13, 15, 28, 16, 20, 24, 9, 24, 44].map(function(w){ return { wch: w }; });
     XLSX.utils.book_append_sheet(wb, s1, "สรุปตาม WBS");
     XLSX.utils.book_append_sheet(wb, s2, "รายต้น");
     var tag = (f.from || "เริ่มต้น") + "_ถึง_" + (f.to || ymd(new Date()));
