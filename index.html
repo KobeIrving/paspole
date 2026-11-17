@@ -101,6 +101,10 @@ button:disabled{opacity:.5;cursor:default}
 .pilebtn:hover{color:inherit}
 .pill{border:1px solid var(--line);border-radius:999px;padding:0 8px;font-size:12.5px;white-space:nowrap}
 .pill.type{border-color:var(--accent);color:var(--accent);font-weight:600}
+#histBar button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.card.entry.sent{border-left:4px solid #2e7d32}
+.sentbox{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+button.sendbtn{border-color:#2e7d32;color:#2e7d32;font-weight:600}
 .pill.ok{border-color:#2e7d32;color:#2e7d32;font-weight:600}
 .form-row{display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
 .form-row .form-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -335,6 +339,11 @@ details.edit .fields{margin-top:6px}
       <div class="col" id="pan-w" role="tabpanel" aria-labelledby="tab-w"></div>
 
       <div class="col" id="pan-h" role="tabpanel" aria-labelledby="tab-h" hidden>
+        <div class="row-actions" id="histBar" role="group" aria-label="แสดงรายการ">
+          <button type="button" class="small" id="hAll" aria-pressed="true">ทั้งหมด</button>
+          <button type="button" class="small" id="hUnsent" aria-pressed="false">ยังไม่ส่งคลัง</button>
+          <button type="button" class="small" id="hSent" aria-pressed="false">ส่งคลังแล้ว</button>
+        </div>
         <div id="history" class="col"></div>
       </div>
 
@@ -621,6 +630,10 @@ details.edit .fields{margin-top:6px}
           if (Date.now() - pe.ts > PHOTO_MS) fail("เกิน 30 นาทีแล้ว ให้ผู้ดูแลแนบรูปให้");
         }
         pe.photo = "data:" + req.mime + ";base64," + req.data;      // trial mode keeps the picture in this browser
+      } else if (a === "setSent") {
+        var se = db.log.filter(function(x){ return x.id === req.id; })[0];
+        if (!se) fail("ไม่พบรายการนี้ อาจถูกยกเลิกไปแล้ว");
+        se.sent = req.on ? new Date().toLocaleString("sv-SE").slice(0, 16) + " · " + (String(req.user || "").trim() || "-") : "";
       } else if (a === "setOrder") {
         admin();
         var oe = db.log.filter(function(x){ return x.id === req.id; })[0], on = String(req.order || "").replace(/\s+/g, "");
@@ -739,7 +752,7 @@ details.edit .fields{margin-top:6px}
   // every server answer carries the whole state; show it
   var BUSY_TEXT = { withdraw: "กำลังบันทึกการเบิก", undo: "กำลังยกเลิกรายการ", undoPoles: "กำลังยกเลิกเสา", upload: "กำลังอัปข้อมูล WBS",
     addPile: "กำลังสร้างกองเสา", deletePile: "กำลังลบกอง", mergePiles: "กำลังรวมกอง", setPositions: "กำลังบันทึกตำแหน่งกอง",
-    setOrder: "กำลังบันทึกเลขที่ใบสั่ง", addPhoto: "กำลังส่งรูป", uploadForms: "กำลังอัปใบเบิกเปล่า", registerForms: "กำลังบันทึกใบเบิกเปล่า", addSigner: "กำลังเพิ่มลายเซ็น", deleteSigner: "กำลังลบลายเซ็น", listFolderForms: "กำลังดูไฟล์ในโฟลเดอร์ไดรฟ์", deleteForm: "กำลังลบใบเบิกเปล่า", getForm: "กำลังเตรียมใบเบิก", checkAdmin: "กำลังตรวจรหัสผู้ดูแล" };
+    setOrder: "กำลังบันทึกเลขที่ใบสั่ง", setSent: "กำลังบันทึกสถานะส่งคลัง", addPhoto: "กำลังส่งรูป", uploadForms: "กำลังอัปใบเบิกเปล่า", registerForms: "กำลังบันทึกใบเบิกเปล่า", addSigner: "กำลังเพิ่มลายเซ็น", deleteSigner: "กำลังลบลายเซ็น", listFolderForms: "กำลังดูไฟล์ในโฟลเดอร์ไดรฟ์", deleteForm: "กำลังลบใบเบิกเปล่า", getForm: "กำลังเตรียมใบเบิก", checkAdmin: "กำลังตรวจรหัสผู้ดูแล" };
   // a small spinning pill while something the user pressed is on its way; the 20-second refresh stays silent
   var busyCount = 0;
   function busyOn(text){
@@ -2217,13 +2230,41 @@ details.edit .fields{margin-top:6px}
   }
 
   /* ---------- history ---------- */
+  var histShow = "hAll";
+  ["hAll", "hUnsent", "hSent"].forEach(function(id){ $(id).addEventListener("click", function(){ histShow = id; renderHistory(); }); });
+  // ส่งคลังตัดแล้ว: tick once the withdrawal paperwork has gone to the store; anyone can tick or untick, the sheet keeps who and when
+  function sentBox(e){
+    var box = el("div", "sentbox"), who = lsGet("pole-user") || ($("inAdmin").value ? "ผู้ดูแล" : "");
+    function set(on, b){
+      b.disabled = true;
+      request({ action: "setSent", id: e.id, on: on, user: who }, true).then(function(){
+        toast(on ? "บันทึกแล้ว ส่งคลังตัดแล้ว" : "ยกเลิกสถานะส่งคลังแล้ว");
+      }, function(err){ b.disabled = false; toast(err.message); });
+    }
+    if (e.sent) {
+      box.appendChild(el("span", "pill ok", "✓ ส่งคลังตัดแล้ว · " + e.sent));
+      var u = el("button", "small", "ยกเลิก"); u.type = "button";
+      twoStep(u, "ยกเลิก", function(){ set(false, u); });
+      box.appendChild(u);
+    } else {
+      var b = el("button", "small sendbtn", "ส่งคลังตัดแล้ว ✓"); b.type = "button";
+      b.addEventListener("click", function(){ set(true, b); });
+      box.appendChild(b);
+    }
+    return box;
+  }
   function pad(n){ return (n < 10 ? "0" : "") + n; }
   function stamp(ts){ var d = new Date(ts); return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()); }
   function renderHistory(){
     var box = $("history"); box.textContent = "";
+    var unsent = state.log.filter(function(e){ return !e.sent; }).length;
+    $("hUnsent").textContent = "ยังไม่ส่งคลัง" + (unsent ? " (" + unsent + ")" : "");
+    ["hAll", "hUnsent", "hSent"].forEach(function(id){ $(id).setAttribute("aria-pressed", String(histShow === id)); });
     if (!state.log.length) { box.appendChild(el("p", "empty", "ยังไม่มีรายการเบิก")); return; }
-    state.log.slice().reverse().forEach(function(e){
-      var card = el("section", "card entry"), head = el("div", "card-head");
+    var list = state.log.filter(function(e){ return histShow === "hAll" || (histShow === "hSent" ? !!e.sent : !e.sent); });
+    if (!list.length) box.appendChild(el("p", "empty", histShow === "hSent" ? "ยังไม่มีรายการที่ส่งคลังแล้ว" : "ส่งคลังครบทุกรายการแล้ว"));
+    list.slice().reverse().forEach(function(e){
+      var card = el("section", "card entry" + (e.sent ? " sent" : "")), head = el("div", "card-head");
       head.appendChild(el("h2", null, e.wbs || "เหตุฉุกเฉิน"));
       if (!e.wbs) card.classList.add("emg");
       head.appendChild(el("time", null, stamp(e.ts)));
@@ -2235,6 +2276,7 @@ details.edit .fields{margin-top:6px}
       });
       card.appendChild(dl);
       card.appendChild(el("div", "labels", "เลขเสา " + e.labels.join(", ")));
+      card.appendChild(sentBox(e));
       var pb = photoBox(e); if (pb) card.appendChild(pb);
       var ob = orderBox(e); if (ob) card.appendChild(ob);
       var ub = undoBox(e); if (ub) card.appendChild(ub);
@@ -2757,17 +2799,17 @@ details.edit .fields{margin-top:6px}
     var f = dashFilter(), s = summarize(dashLog, f, state.demand);
     var a = [["เบิกล่าสุด", "เบิกเพื่อ", "องค์ประกอบ WBS", "ใบสั่ง/โครงข่าย", "ชื่องาน", "วัสดุ", "คำอธิบายของวัสดุ", "จำนวน (ต้น)", "รอบ", "เลขเสา", "ผู้รับเหมา", "เลขที่ใบจองพัสดุ", "ยังเบิกได้"]];
     s.rows.forEach(function(g){ a.push([stamp(g.last), g.kind, g.wbs, g.nets.join(", "), g.note ? g.job + " · " + g.note : g.job, g.mat, g.desc, g.n, g.trips.length, g.labels.join(", "), g.contractors.join(", "), g.bookings.join(", "), g.left == null ? "" : g.left]); });
-    var b = [["วันที่", "เวลา", "ผู้เบิก", "เบิกเพื่อ", "องค์ประกอบ WBS", "ชื่องาน / เหตุ", "ใบสั่ง/โครงข่าย", "วัสดุ", "คำอธิบายของวัสดุ", "เลขที่ใบจองพัสดุ", "ผู้รับเหมา", "กอง", "เลขเสา", "หมายเหตุ", "รูป"]];
+    var b = [["วันที่", "เวลา", "ผู้เบิก", "เบิกเพื่อ", "องค์ประกอบ WBS", "ชื่องาน / เหตุ", "ใบสั่ง/โครงข่าย", "วัสดุ", "คำอธิบายของวัสดุ", "เลขที่ใบจองพัสดุ", "ผู้รับเหมา", "กอง", "เลขเสา", "หมายเหตุ", "รูป", "ส่งคลัง"]];
     dashLog.forEach(function(e){
       var one = summarize([e], f, []);
       if (!one.times) return;
       var t = stamp(e.ts);
-      e.labels.forEach(function(l){ b.push([t.slice(0, 10), t.slice(11), e.user, e.wbs ? "ก่อสร้าง" : "ฉุกเฉิน", e.wbs, e.job, e.net, e.mat, e.desc, e.booking, e.contractor, e.pile, l, e.note || "", e.photo && e.photo.indexOf("data:") !== 0 ? photoLink(e.photo) : ""]); });
+      e.labels.forEach(function(l){ b.push([t.slice(0, 10), t.slice(11), e.user, e.wbs ? "ก่อสร้าง" : "ฉุกเฉิน", e.wbs, e.job, e.net, e.mat, e.desc, e.booking, e.contractor, e.pile, l, e.note || "", e.photo && e.photo.indexOf("data:") !== 0 ? photoLink(e.photo) : "", e.sent || ""]); });
     });
     var wb = XLSX.utils.book_new();
     var s1 = XLSX.utils.aoa_to_sheet(a), s2 = XLSX.utils.aoa_to_sheet(b);
     s1["!cols"] = [16, 11, 24, 14, 36, 15, 28, 11, 6, 40, 20, 16, 11].map(function(w){ return { wch: w }; });
-    s2["!cols"] = [11, 7, 14, 10, 24, 36, 13, 15, 28, 16, 20, 24, 9, 24, 44].map(function(w){ return { wch: w }; });
+    s2["!cols"] = [11, 7, 14, 10, 24, 36, 13, 15, 28, 16, 20, 24, 9, 24, 44, 24].map(function(w){ return { wch: w }; });
     XLSX.utils.book_append_sheet(wb, s1, "สรุปตาม WBS");
     XLSX.utils.book_append_sheet(wb, s2, "รายต้น");
     var tag = (f.from || "เริ่มต้น") + "_ถึง_" + (f.to || ymd(new Date()));
