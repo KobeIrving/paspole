@@ -409,7 +409,7 @@ details.edit .fields{margin-top:6px}
         <div id="formsList" class="col"></div>
         <hr>
         <h3>ลายเซ็น</h3>
-        <p class="note">ใช้วางบนใบเบิก ZPSF009 เก็บในโฟลเดอร์ส่วนตัวในไดรฟ์ของคุณ (ไม่ได้แชร์) แอปดึงมาได้เฉพาะตอนใส่รหัสผู้ดูแล</p>
+        <p class="note">ใช้วางบนใบเบิก ZPSF009 เก็บในโฟลเดอร์ส่วนตัวในไดรฟ์ของคุณ (ไม่ได้แชร์) ตอนนี้ทุกคนที่ใช้แอปใส่ลายเซ็นได้โดยไม่ต้องใช้รหัส ถ้าจะให้ต้องใช้รหัสผู้ดูแล ไปที่แท็บ ตั้งค่า ใน Google Sheet แล้วเปลี่ยน ลายเซ็นไม่ต้องใช้รหัส เป็น ปิด</p>
         <div class="row-actions">
           <label class="filebtn" id="signImpBtn">นำเข้าจากไฟล์ใส่ลายเซ็น (.html)<input type="file" id="inSignHtml" accept=".html,.htm,text/html"></label>
           <button type="button" id="btnSignLoad">แสดงลายเซ็นที่มี</button>
@@ -572,7 +572,7 @@ details.edit .fields{margin-top:6px}
       db.log.forEach(function(e){ if (e.importId === db.importId) used[e.key] = (used[e.key] || 0) + e.labels.length; });
       db.demand.forEach(function(l){ l.left = Math.max(0, Math.floor(l.remain - (used[l.key] || 0))); });
       return { importId: db.importId, importInfo: db.importInfo, demand: db.demand, piles: db.piles, log: db.log.slice(-200),
-               forms: db.forms || [] };
+               forms: db.forms || [], signOpen: db.signOpen !== false };
     }
     try {
       var a = req.action;
@@ -702,7 +702,7 @@ details.edit .fields{margin-top:6px}
         if (!fd || !(db.forms || []).some(function(f){ return f.fileId === req.fileId; })) fail("ไม่พบใบเบิกเปล่านี้ ผู้ดูแลอาจลบหรืออัปใหม่แล้ว");
         return { ok: true, data: fd };
       } else if (a === "getSigners") {
-        admin();
+        if (db.signOpen === false) admin();
         return { ok: true, signers: (db.signers || []).slice() };
       } else if (a === "addSigner") {
         admin();
@@ -1713,7 +1713,7 @@ details.edit .fields{margin-top:6px}
     if (!f) return null;
     var b = el("button", "small", "ใบเบิก PDF"); b.type = "button";
     b.addEventListener("click", function(){
-      if ($("inAdmin").value) { openSigner([f], state.log, formFile(f)); return; }      // admin: add signatures before downloading
+      if (canSign()) { openSigner([f], state.log, formFile(f)); return; }               // add signatures before downloading
       b.disabled = true; makeForm(f).then(function(){ b.disabled = false; });
     });
     return b;
@@ -1839,11 +1839,13 @@ details.edit .fields{margin-top:6px}
   }
 
   /* ---------- signatures on the withdrawal forms ---------- */
-  // The pictures live in a private Drive folder; they are fetched only with the admin code and kept in memory, never stored here.
+  // The pictures live in a private Drive folder; fetched when a form is signed (admin code needed unless the sheet's switch allows everyone),
+  // kept in memory only, never stored on the phone.
+  function canSign(){ return !!$("inAdmin").value || !!state.signOpen; }
   var signers = null, signImg = {};
   function loadSigners(force){
     var code = $("inAdmin").value;
-    if (!code) return Promise.reject(new Error("ใส่รหัสผู้ดูแลก่อน"));
+    if (!code && !state.signOpen) return Promise.reject(new Error("ใส่รหัสผู้ดูแลก่อน"));
     if (signers && !force) return Promise.resolve(signers);
     var off = busyOn("กำลังโหลดลายเซ็น");
     return call({ action: "getSigners", admin: code }).then(function(r){
@@ -2122,7 +2124,9 @@ details.edit .fields{margin-top:6px}
       if (res && res.id) { addMine(res.id); renderW(); renderHistory(); if (photo) uploadPhoto(res.id, photo.file, true); }
       frame(null); toast("บันทึกแล้ว เบิก " + n + " ต้น ให้ " + wbs + " ถ้าเบิกผิด ยกเลิกเองได้ภายใน 10 นาที");
       var mine = res && res.id ? state.log.filter(function(x){ return x.id === res.id; })[0] : null;
-      if (!emg && mine) makeForm(formForEntry(mine, state.forms), true);       // a blank ZPSF009 is waiting for this job: fill it in
+      var fm = !emg && mine ? formForEntry(mine, state.forms) : null;       // a blank ZPSF009 is waiting for this job: fill it in
+      if (fm && canSign() && planOf(fm).total) openSigner([fm], state.log, formFile(fm));   // signatures on, then the person downloads it
+      else if (fm) makeForm(fm, true);
     }, function(e){
       justSaved = false; wz = keep;
       var run = runOf(wz.pile);
@@ -2732,7 +2736,7 @@ details.edit .fields{margin-top:6px}
     st.classList.remove("err");
     if (!forms.length) { st.textContent = "ไม่มีงานที่มีใบเปล่าและมีการเบิกในช่วงวันที่นี้" + miss; return; }
     var fname = "ใบเบิกรวม_" + (f.from || "เริ่มต้น") + "_ถึง_" + (f.to || new Date().toLocaleString("sv-SE").slice(0, 10)) + ".pdf";
-    if ($("inAdmin").value) {                      // admin: open them with the signatures laid on
+    if (canSign()) {                               // open them with the signatures laid on
       st.textContent = "เปิดใบเบิก " + forms.length + " หน้า: " + forms.map(function(fm){ return fm.wbs + " " + formName(fm); }).join(", ") + miss;
       openSigner(forms, log, fname); return;
     }
