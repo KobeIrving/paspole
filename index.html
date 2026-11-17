@@ -106,6 +106,7 @@ button:disabled{opacity:.5;cursor:default}
 .form-row .form-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
 .form-row .form-txt b{overflow-wrap:anywhere}
 .form-row .pill{align-self:flex-start;white-space:normal}
+.form-one{display:flex;flex-direction:column;gap:6px;border-top:1px dashed var(--line);padding-top:6px}
 details.more>summary{cursor:pointer;color:var(--muted,inherit);font-size:14px;padding:4px 0}
 details.more>div{display:flex;flex-direction:column;gap:6px;margin-top:6px}
 dl.kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;margin:0;font-size:14px}
@@ -349,7 +350,7 @@ details.edit .fields{margin-top:6px}
             <tfoot></tfoot>
           </table>
         </div>
-        <p class="note">รวมใบเบิก PDF: ทุกงานที่มีใบเปล่าและมีการเบิกในช่วงวันที่ที่เลือก งานละ 1 หน้า ในแต่ละหน้าใส่เสาของงานนั้นทั้งหมดตั้งแต่วันที่ในใบ เหมือนใบที่ออกตอนเบิก</p>
+        <p class="note">รวมใบเบิก PDF: ทุกใบเปล่าที่มีการเบิกในช่วงวันที่ที่เลือก ใบละ 1 หน้า ในแต่ละหน้าใส่เสาทั้งหมดที่ลงใบนั้น เหมือนใบที่ออกตอนเบิก</p>
         <p class="note">นับจากประวัติการเบิกในแอปทั้งหมด รายการที่ยกเลิกแล้วไม่ถูกนับ ช่อง ยังเบิกได้ มาจากไฟล์ zcn52n ล่าสุดหักยอดที่เบิกในแอป</p>
       </div>
 
@@ -365,7 +366,7 @@ details.edit .fields{margin-top:6px}
         <p class="status" id="impStatus" role="status"></p>
         <hr>
         <h3>ใบเบิก ZPSF009</h3>
-        <p class="note">อัปใบขอเบิกพัสดุที่สั่งพิมพ์จาก SAP เป็น PDF (ยังไม่ต้องเขียนอะไร) ไว้ก่อน แอปจะจับคู่แต่ละหน้ากับ WBS ให้เอง เมื่อช่างกดบันทึกเบิกเสาของงานนั้น แอปจะเติมเลข Booking ผู้รับเหมา จำนวน และเลขเสาลงใบ แล้วออกเป็น PDF ให้ทันที นับเฉพาะเสาที่เบิกตั้งแต่วันที่พิมพ์ในใบ</p>
+        <p class="note">อัปใบขอเบิกพัสดุที่สั่งพิมพ์จาก SAP เป็น PDF (ยังไม่ต้องเขียนอะไร) ไว้ก่อน แอปจะจับคู่แต่ละหน้ากับ WBS ให้เอง งานเดียวมีได้หลายใบ (แยกชนิดเสา หรือพิมพ์คนละวัน) เสาที่เบิกจะลงใบที่มีชนิดเสานั้นและวันที่ในใบล่าสุดไม่เกินวันเบิก เมื่อช่างกดบันทึกเบิกเสา แอปจะเติมเลข Booking ผู้รับเหมา จำนวน และเลขเสาลงใบ แล้วออกเป็น PDF ให้ทันที นับเฉพาะเสาที่เบิกตั้งแต่วันที่พิมพ์ในใบ</p>
         <label class="filebtn primary" id="formBtn">อัปใบเบิกเปล่า (.pdf)<input type="file" id="inForm" accept="application/pdf,.pdf" multiple></label>
         <p class="status" id="formStatus" role="status"></p>
         <div id="formsList" class="col"></div>
@@ -614,15 +615,17 @@ details.edit .fields{margin-top:6px}
         var fp = (req.pages || []).filter(function(q){ return q && String(q.wbs || "").trim(); });
         if (!req.data) fail("ไม่มีไฟล์");
         if (!fp.length) fail("ไม่พบเลขใบสั่งงาน (WBS) ในไฟล์นี้");
-        var fid = "local" + Date.now().toString(36), fw = fp.map(function(q){ return String(q.wbs).trim(); });
+        var fid = "local" + Date.now().toString(36);
+        function fkey(w, d, lay){ return [String(w).trim(), d || "", ((lay || {}).rows || []).map(function(r){ return r.mat; }).sort().join(",")].join("|"); }
+        var fw = fp.map(function(q){ return fkey(q.wbs, q.date, q.layout); });
         db.formFiles = db.formFiles || {}; db.formFiles[fid] = req.data;              // trial mode keeps the PDF in this browser
-        db.forms = (db.forms || []).filter(function(f){ return fw.indexOf(f.wbs) < 0; });
+        db.forms = (db.forms || []).filter(function(f){ return fw.indexOf(fkey(f.wbs, f.date, f.layout)) < 0; });   // same job, date and pole types: the new one replaces it
         fp.forEach(function(q){ db.forms.push({ wbs: String(q.wbs).trim(), net: q.net || "", reserve: q.reserve || "", date: q.date || "", fileId: fid, page: Number(q.page) || 1,
           name: String(req.name || ""), at: new Date().toLocaleString("sv-SE").slice(0, 16), ts: Date.now(), layout: q.layout || null }); });
         dropFiles();
       } else if (a === "deleteForm") {
         admin();
-        db.forms = (db.forms || []).filter(function(f){ return f.wbs !== req.wbs; });
+        db.forms = (db.forms || []).filter(function(f){ return req.fileId ? !(f.fileId === req.fileId && Number(f.page) === Number(req.page)) : f.wbs !== req.wbs; });
         dropFiles();
       } else if (a === "getForm") {
         var fd = (db.formFiles || {})[req.fileId];
@@ -1172,7 +1175,7 @@ details.edit .fields{margin-top:6px}
         c.appendChild(el("p", "note", (e.wbs || "เหตุฉุกเฉิน · " + e.job) + " · " + shortType(e.desc) + " · กอง " + e.pile));
         var pb = photoBox(e); if (pb) c.appendChild(pb);
         var ub = undoBox(e); if (ub) c.appendChild(ub);
-        var fb = formButton(e.wbs); if (fb) { var fr = el("div", "row-actions"); fr.appendChild(fb); c.appendChild(fr); }
+        var fb = formButton(e); if (fb) { var fr = el("div", "row-actions"); fr.appendChild(fb); c.appendChild(fr); }
         box.appendChild(c);
       });
       if (!state.demand.length) box.appendChild(el("p", "status err", "ยังไม่มีข้อมูล WBS ให้ผู้ดูแลอัปไฟล์ผลลัพธ์ zcn52n ในแท็บ ผู้ดูแล"));
@@ -1463,22 +1466,37 @@ details.edit .fields{margin-top:6px}
     return hit ? hit.wbs : "";
   }
   function dayStart(d){ var m = String(d || "").match(/(\d{2})\.(\d{2})\.(\d{4})/); return m ? new Date(+m[3], +m[2] - 1, +m[1]).getTime() : 0; }
-  // what to write on a form: poles withdrawn for its WBS from the day printed on it, per material row
-  function formPlan(form, log, demand){
-    var from = dayStart(form.date), lay = form.layout || { rows: [] };
-    var es = log.filter(function(e){ return e.wbs && e.wbs === form.wbs && e.ts >= from; }).sort(function(a, b){ return a.ts - b.ts; });
-    var lines = demand.filter(function(l){ return l.wbs === form.wbs; });
+  function formId(f){ return f.fileId + "#" + f.page; }
+  function formMats(f){ return ((f.layout || {}).rows || []).map(function(r){ return r.mat; }); }
+  // A job can have several blank forms (one per pole type, or printed again later). Each withdrawal goes on exactly one:
+  // same WBS, has a row for that pole type, printed on or before the day of withdrawal; the newest print wins, then the newest upload.
+  function formForEntry(e, forms){
+    var best = null;
+    (forms || []).forEach(function(f){
+      if (!e.wbs || f.wbs !== e.wbs || formMats(f).indexOf(e.mat) < 0 || dayStart(f.date) > e.ts) return;
+      var d = dayStart(f.date), bd = best ? dayStart(best.date) : -1;
+      if (!best || d > bd || (d === bd && (f.ts || 0) >= (best.ts || 0))) best = f;
+    });
+    return best;
+  }
+  // what to write on one form: the poles of every withdrawal that belongs to it, per material row
+  function formPlan(form, log, demand, forms){
+    var id = formId(form), mats = formMats(form);
+    var es = log.filter(function(e){ var f = formForEntry(e, forms); return f && formId(f) === id; }).sort(function(a, b){ return a.ts - b.ts; });
+    var lines = demand.filter(function(l){ return l.wbs === form.wbs && mats.indexOf(l.mat) >= 0; });
     function pick(f){ for (var i = es.length - 1; i >= 0; i--) if (es[i][f]) return es[i][f]; for (i = 0; i < lines.length; i++) if (lines[i][f]) return lines[i][f]; return ""; }
-    var rows = (lay.rows || []).map(function(r){
+    var rows = ((form.layout || {}).rows || []).map(function(r){
       var labels = []; es.forEach(function(e){ if (e.mat === r.mat) labels = labels.concat(e.labels); });
       return { mat: r.mat, y: r.y, labels: labels };
     });
-    var stray = es.filter(function(e){ return !rows.some(function(r){ return r.mat === e.mat; }); }).length;
+    var from = dayStart(form.date);                // same job, from this print on, but no form has a row for that pole type
+    var stray = log.filter(function(e){ return e.wbs === form.wbs && e.ts >= from && !formForEntry(e, forms); }).length;
     return { booking: pick("booking"), contractor: pick("contractor"), rows: rows, stray: stray,
              total: rows.reduce(function(n, r){ return n + r.labels.length; }, 0) };
   }
   /*FORM-END*/
-  function formOf(wbs){ return wbs ? (state.forms || []).filter(function(f){ return f.wbs === wbs; })[0] || null : null; }
+  function formsOf(wbs){ return wbs ? (state.forms || []).filter(function(f){ return f.wbs === wbs; }) : []; }
+  function planOf(form, log){ return formPlan(form, log || state.log, state.demand, state.forms); }
   // text drawn by the browser (so Thai shapes correctly), turned into a picture for the PDF
   function inkPng(lines, pt, bold){
     var k = 4, font = (bold ? "700 " : "500 ") + (pt * k) + "px " + (cssVar("--font-body") || "sans-serif");
@@ -1514,7 +1532,7 @@ details.edit .fields{margin-top:6px}
             return srcs[form.fileId] || (srcs[form.fileId] = L.PDFDocument.load(files[form.fileId]));
           }).then(function(src){
             return doc.copyPages(src, [Math.min(form.page, src.getPageCount()) - 1]);
-          }).then(function(pp){ return fillPage(doc, doc.addPage(pp[0]), form, formPlan(form, log, state.demand)); });
+          }).then(function(pp){ return fillPage(doc, doc.addPage(pp[0]), form, planOf(form, log)); });
         });
         return chain.then(function(){ return doc.save(); });
       });
@@ -1557,25 +1575,27 @@ details.edit .fields{margin-top:6px}
     a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
     setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
   }
-  function makeForm(wbs, auto){
-    var f = formOf(wbs);
+  function formName(f){ return formMats(f).map(function(m){ return shortType(types[m] || m); }).join(" + "); }
+  function makeForm(f, auto){
     if (!f) return Promise.resolve(false);
-    if (!formPlan(f, state.log, state.demand).total) { toast("งาน " + wbs + " ยังไม่มีเสาที่เบิกตั้งแต่วันที่ " + (f.date || "ในใบ")); return Promise.resolve(false); }
+    var plan = planOf(f);
+    if (!plan.total) { toast("ใบ " + f.wbs + " (" + formName(f) + ") ยังไม่มีเสาที่เบิกตั้งแต่วันที่ " + (f.date || "ในใบ")); return Promise.resolve(false); }
     return buildFormPdf([f], state.log).then(function(bytes){
-      saveBlob(bytes, "ใบเบิก_" + wbs + "_" + new Date().toLocaleString("sv-SE").slice(0, 10) + ".pdf");
-      var plan = formPlan(f, state.log, state.demand);
-      toast((auto ? "บันทึกแล้ว และออกใบเบิก PDF ให้แล้ว " : "ออกใบเบิก PDF แล้ว ") + wbs + " รวม " + plan.total + " ต้น" +
-            (plan.stray ? " (มีเสาชนิดที่ไม่อยู่ในใบ " + plan.stray + " รายการ ไม่ได้ใส่)" : ""));
+      saveBlob(bytes, "ใบเบิก_" + f.wbs + (formsOf(f.wbs).length > 1 ? "_" + formName(f).replace(/\s+/g, "") : "") + "_" + new Date().toLocaleString("sv-SE").slice(0, 10) + ".pdf");
+      toast((auto ? "บันทึกแล้ว และออกใบเบิก PDF ให้แล้ว " : "ออกใบเบิก PDF แล้ว ") + f.wbs + " " + formName(f) + " รวม " + plan.total + " ต้น" +
+            (plan.stray ? " (มีเสา " + plan.stray + " รายการที่ยังไม่มีใบเปล่าของชนิดนั้น)" : ""));
       return true;
     }, function(e){
       toast("ออกใบเบิก PDF ไม่สำเร็จ: " + e.message + (auto ? " กดออกใหม่ได้ในแท็บประวัติ" : ""));
       return false;
     });
   }
-  function formButton(wbs){
-    if (!formOf(wbs)) return null;
+  // button for a withdrawal (the form its poles went on) or for one form in the admin list
+  function formButton(x, isForm){
+    var f = isForm ? x : formForEntry(x, state.forms);
+    if (!f) return null;
     var b = el("button", "small", "ใบเบิก PDF"); b.type = "button";
-    b.addEventListener("click", function(){ b.disabled = true; makeForm(wbs).then(function(){ b.disabled = false; }); });
+    b.addEventListener("click", function(){ b.disabled = true; makeForm(f).then(function(){ b.disabled = false; }); });
     return b;
   }
   function readFormFile(file){
@@ -1629,23 +1649,25 @@ details.edit .fields{margin-top:6px}
     state.demand.forEach(function(l){ if (!jobs[l.wbs]) { jobs[l.wbs] = { wbs: l.wbs, job: l.job }; order.push(l.wbs); } });
     (state.forms || []).forEach(function(f){ if (!jobs[f.wbs]) { jobs[f.wbs] = { wbs: f.wbs, job: "", gone: true }; order.push(f.wbs); } });
     if (!order.length) return;
-    var have = order.filter(formOf), lack = order.filter(function(w){ return !formOf(w); });
+    var have = order.filter(function(w){ return formsOf(w).length; }), lack = order.filter(function(w){ return !formsOf(w).length; });
     box.appendChild(el("p", "note", "มีใบเปล่าแล้ว " + have.length + " จาก " + order.length + " งาน"));
     function row(w){
-      var j = jobs[w], f = formOf(w), r = el("div", "form-row"), t = el("div", "form-txt");
+      var j = jobs[w], fs = formsOf(w), r = el("div", "form-row"), t = el("div", "form-txt");
       t.appendChild(el("b", null, w));
       if (j.job || j.gone) t.appendChild(el("span", "note", j.job || "ไม่อยู่ในข้อมูล WBS ล่าสุดแล้ว"));
-      t.appendChild(el("span", f ? "pill ok" : "pill", f ? "มีใบเปล่า · " + f.name + " หน้า " + f.page + " · วันที่ในใบ " + (f.date || "-") : "ยังไม่มีใบเปล่า"));
+      if (!fs.length) t.appendChild(el("span", "pill", "ยังไม่มีใบเปล่า"));
       r.appendChild(t);
-      if (f) {
-        var a = el("div", "row-actions"); a.appendChild(formButton(w));
-        var d = el("button", "small", "ลบใบเปล่า"); d.type = "button";
-        twoStep(d, "ลบใบเปล่า", function(){
+      fs.slice().sort(function(a, b){ return dayStart(a.date) - dayStart(b.date) || (a.ts || 0) - (b.ts || 0); }).forEach(function(f){
+        var one = el("div", "form-one");
+        one.appendChild(el("span", "pill ok", formName(f) + " · วันที่ในใบ " + (f.date || "-") + " · " + f.name + " หน้า " + f.page));
+        var a = el("div", "row-actions"); a.appendChild(formButton(f, true));
+        var d = el("button", "small", "ลบใบนี้"); d.type = "button";
+        twoStep(d, "ลบใบนี้", function(){
           var code = adminCode(); if (!code) return;
-          request({ action: "deleteForm", admin: code, wbs: w }).then(function(){ toast("ลบใบเปล่าของ " + w + " แล้ว"); }, function(){});
+          request({ action: "deleteForm", admin: code, wbs: w, fileId: f.fileId, page: f.page }).then(function(){ toast("ลบใบเปล่า " + w + " " + formName(f) + " แล้ว"); }, function(){});
         });
-        a.appendChild(d); r.appendChild(a);
-      }
+        a.appendChild(d); one.appendChild(a); r.appendChild(one);
+      });
       return r;
     }
     have.forEach(function(w){ box.appendChild(row(w)); });
@@ -1708,7 +1730,8 @@ details.edit .fields{margin-top:6px}
     request(req, true).then(function(res){
       if (res && res.id) { addMine(res.id); renderW(); renderHistory(); if (photo) uploadPhoto(res.id, photo.file, true); }
       frame(null); toast("บันทึกแล้ว เบิก " + n + " ต้น ให้ " + wbs + " ถ้าเบิกผิด ยกเลิกเองได้ภายใน 10 นาที");
-      if (!emg && formOf(line.wbs)) makeForm(line.wbs, true);                 // a blank ZPSF009 is waiting for this job: fill it in
+      var mine = res && res.id ? state.log.filter(function(x){ return x.id === res.id; })[0] : null;
+      if (!emg && mine) makeForm(formForEntry(mine, state.forms), true);       // a blank ZPSF009 is waiting for this job: fill it in
     }, function(e){
       justSaved = false; wz = keep;
       var run = runOf(wz.pile);
@@ -1825,7 +1848,7 @@ details.edit .fields{margin-top:6px}
         if (!$("inAdmin").value) { toast("ใส่รหัสผู้ดูแลในแท็บ ผู้ดูแล ก่อน"); return; }
         request({ action: "undo", id: e.id, admin: $("inAdmin").value }).then(function(){ toast("ยกเลิกรายการแล้ว เสากลับเข้ากอง"); }, function(){});
       });
-      var a = el("div", "row-actions"), fb = formButton(e.wbs); if (fb) a.appendChild(fb); a.appendChild(b); card.appendChild(a);
+      var a = el("div", "row-actions"), fb = formButton(e); if (fb) a.appendChild(fb); a.appendChild(b); card.appendChild(a);
       box.appendChild(card);
     });
   }
@@ -2303,21 +2326,24 @@ details.edit .fields{margin-top:6px}
   // every job that has a blank ZPSF009 and was withdrawn for in the chosen dates, filled in, one PDF to print at once
   function jobsInRange(log, f){
     var from = f.from ? new Date(f.from + "T00:00:00").getTime() : -Infinity, to = f.to ? new Date(f.to + "T23:59:59.999").getTime() : Infinity;
-    var seen = {}, out = [];
-    log.forEach(function(e){ if (e.wbs && e.ts >= from && e.ts <= to && !seen[e.wbs]) { seen[e.wbs] = 1; out.push(e.wbs); } });
-    return out;
+    return log.filter(function(e){ return e.wbs && e.ts >= from && e.ts <= to; });
   }
   $("dForms").addEventListener("click", function(){
     var b = this, log = dashLog || state.log, f = dashFilter(), st = $("dStatus");
-    var wbs = jobsInRange(log, f), lack = wbs.filter(function(w){ return !formOf(w); });
-    var forms = wbs.map(formOf).filter(function(fm){ return fm && formPlan(fm, log, state.demand).total; });
-    var miss = lack.length ? " · ยังไม่มีใบเปล่า " + lack.length + " งาน: " + lack.join(", ") : "";
+    var seen = {}, forms = [], lack = {};
+    jobsInRange(log, f).forEach(function(e){
+      var fm = formForEntry(e, state.forms);
+      if (!fm) { lack[e.wbs + " " + shortType(e.desc)] = 1; return; }
+      if (!seen[formId(fm)]) { seen[formId(fm)] = 1; forms.push(fm); }
+    });
+    forms.sort(function(a, b){ return a.wbs < b.wbs ? -1 : a.wbs > b.wbs ? 1 : dayStart(a.date) - dayStart(b.date); });
+    var lk = Object.keys(lack), miss = lk.length ? " · ยังไม่มีใบเปล่า " + lk.length + " รายการ: " + lk.join(", ") : "";
     st.classList.remove("err");
     if (!forms.length) { st.textContent = "ไม่มีงานที่มีใบเปล่าและมีการเบิกในช่วงวันที่นี้" + miss; return; }
-    b.disabled = true; st.textContent = "กำลังรวมใบเบิก " + forms.length + " งาน";
+    b.disabled = true; st.textContent = "กำลังรวมใบเบิก " + forms.length + " ใบ";
     buildFormPdf(forms, log).then(function(bytes){
       saveBlob(bytes, "ใบเบิกรวม_" + (f.from || "เริ่มต้น") + "_ถึง_" + (f.to || new Date().toLocaleString("sv-SE").slice(0, 10)) + ".pdf");
-      st.textContent = "รวมใบเบิกแล้ว " + forms.length + " หน้า: " + forms.map(function(fm){ return fm.wbs; }).join(", ") + miss;
+      st.textContent = "รวมใบเบิกแล้ว " + forms.length + " หน้า: " + forms.map(function(fm){ return fm.wbs + " " + formName(fm); }).join(", ") + miss;
     }, function(e){ st.classList.add("err"); st.textContent = "รวมใบเบิกไม่สำเร็จ: " + e.message; }).then(function(){ b.disabled = false; });
   });
   function setRange(from, to){ $("dFrom").value = from; $("dTo").value = to; renderDash(); }
