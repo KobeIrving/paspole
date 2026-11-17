@@ -110,6 +110,12 @@ button.sendbtn{border-color:#2e7d32;color:#2e7d32;font-weight:600}
 .form-row .form-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
 .form-row .form-txt b{overflow-wrap:anywhere}
 .form-row .pill{align-self:flex-start;white-space:normal}
+.sharesheet{position:fixed;left:8px;right:8px;bottom:calc(8px + env(safe-area-inset-bottom));z-index:45;background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:0 6px 24px rgba(0,0,0,.25);padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.sharesheet[hidden]{display:none}
+.sharesheet b{overflow-wrap:anywhere;font-size:14px}
+.sharesheet .note:empty{display:none}
+.sharesheet .row-actions button{flex:1;min-height:44px}
+.sharesheet #shareGo{flex:2}
 .sgm{position:fixed;inset:0;z-index:40;background:#e7eaef;display:flex;flex-direction:column}
 .sgm[hidden]{display:none}
 .sgbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
@@ -483,10 +489,20 @@ details.edit .fields{margin-top:6px}
   </aside>
 </div>
 
+<div class="sharesheet" id="shareSheet" hidden role="dialog" aria-labelledby="shareName">
+  <p class="note" id="shareSaid"></p>
+  <b id="shareName"></b>
+  <p class="note">แตะ แชร์ เพื่อส่งเข้า LINE อีเมล หรือแอปอื่น</p>
+  <div class="row-actions">
+    <button type="button" class="primary" id="shareGo">แชร์</button>
+    <button type="button" id="shareSave">ดาวน์โหลด</button>
+    <button type="button" id="shareClose">ปิด</button>
+  </div>
+</div>
 <div class="sgm" id="sgm" hidden role="dialog" aria-modal="true" aria-labelledby="sgTitle">
   <div class="sgbar">
     <b id="sgTitle">ใบเบิก PDF</b>
-    <button type="button" class="primary" id="sgSave">ดาวน์โหลด PDF</button>
+    <button type="button" class="primary" id="sgSave">บันทึก PDF</button>
     <button type="button" id="sgClose">ปิด</button>
   </div>
   <div class="sgbody">
@@ -1699,6 +1715,27 @@ details.edit .fields{margin-top:6px}
     if (head.length) put(head, headPt, true, sz.width - left - 16, function(w, h){ return [left, below - 8 - h]; });
     return Promise.all(jobs);
   }
+  // On a phone that can share files (Android Chrome, iPhone Safari), offer the system share sheet (LINE, mail, Drive ...)
+  // next to download. Sharing must start from a tap, so the file is made first and the sheet waits for that tap.
+  function canShareFile(){
+    try { return COARSE && !!navigator.canShare && navigator.canShare({ files: [new File([new Uint8Array(1)], "x.pdf", { type: "application/pdf" })] }); }
+    catch (e) { return false; }
+  }
+  function deliverPdf(bytes, name, said){
+    if (!canShareFile()) { saveBlob(bytes, name); if (said) toast(said); return; }
+    var file = new File([bytes], name, { type: "application/pdf" }), box = $("shareSheet");
+    $("shareName").textContent = name;
+    $("shareSaid").textContent = said || "";
+    box.hidden = false;
+    $("shareGo").onclick = function(){
+      navigator.share({ files: [file], title: name.replace(/\.pdf$/, "") }).then(function(){ box.hidden = true; }, function(e){
+        if (e && e.name === "AbortError") return;                       // closed the share sheet: keep the panel for another try
+        toast("แชร์ไม่ได้ในเครื่องนี้ ใช้ปุ่ม ดาวน์โหลด แทน");
+      });
+    };
+    $("shareSave").onclick = function(){ saveBlob(bytes, name); box.hidden = true; };
+    $("shareClose").onclick = function(){ box.hidden = true; };
+  }
   function saveBlob(bytes, name){
     var url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })), a = document.createElement("a");
     a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
@@ -1711,8 +1748,7 @@ details.edit .fields{margin-top:6px}
     var plan = planOf(f);
     if (!plan.total) { toast("ใบ " + f.wbs + " (" + formName(f) + ") ยังไม่มีเสาที่เบิกตั้งแต่วันที่ " + (f.date || "ในใบ")); return Promise.resolve(false); }
     return buildFormPdf([f], state.log).then(function(res){
-      saveBlob(res.bytes, formFile(f));
-      toast((auto ? "บันทึกแล้ว และออกใบเบิก PDF ให้แล้ว " : "ออกใบเบิก PDF แล้ว ") + f.wbs + " " + formName(f) + " รวม " + plan.total + " ต้น" +
+      deliverPdf(res.bytes, formFile(f), (auto ? "บันทึกแล้ว และออกใบเบิก PDF ให้แล้ว " : "ออกใบเบิก PDF แล้ว ") + f.wbs + " " + formName(f) + " รวม " + plan.total + " ต้น" +
             (plan.stray ? " (มีเสา " + plan.stray + " รายการที่ยังไม่มีใบเปล่าของชนิดนั้น)" : ""));
       return true;
     }, function(e){
@@ -2080,7 +2116,7 @@ details.edit .fields{margin-top:6px}
           });
         })).then(function(){ return doc.save(); });
       });
-    }).then(function(bytes){ saveBlob(bytes, sg.name); toast("ดาวน์โหลดใบเบิกพร้อมลายเซ็นแล้ว"); },
+    }).then(function(bytes){ deliverPdf(bytes, sg.name, "ใบเบิกพร้อมลายเซ็นพร้อมแล้ว"); },
       function(e){ toast("บันทึก PDF ไม่สำเร็จ: " + e.message); }).then(function(){ b.disabled = false; });
   });
 
@@ -2784,7 +2820,7 @@ details.edit .fields{margin-top:6px}
     }
     b.disabled = true; st.textContent = "กำลังรวมใบเบิก " + forms.length + " ใบ";
     buildFormPdf(forms, log).then(function(res){
-      saveBlob(res.bytes, fname);
+      deliverPdf(res.bytes, fname);
       st.textContent = "รวมใบเบิกแล้ว " + forms.length + " หน้า: " + forms.map(function(fm){ return fm.wbs + " " + formName(fm); }).join(", ") + miss;
     }, function(e){ st.classList.add("err"); st.textContent = "รวมใบเบิกไม่สำเร็จ: " + e.message; }).then(function(){ b.disabled = false; });
   });
