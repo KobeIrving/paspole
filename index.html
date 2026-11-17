@@ -367,7 +367,11 @@ details.edit .fields{margin-top:6px}
         <hr>
         <h3>ใบเบิก ZPSF009</h3>
         <p class="note">อัปใบขอเบิกพัสดุที่สั่งพิมพ์จาก SAP เป็น PDF (ยังไม่ต้องเขียนอะไร) ไว้ก่อน แอปจะจับคู่แต่ละหน้ากับ WBS ให้เอง งานเดียวมีได้หลายใบ (แยกชนิดเสา หรือพิมพ์คนละวัน) เสาที่เบิกจะลงใบที่มีชนิดเสานั้นและวันที่ในใบล่าสุดไม่เกินวันเบิก เมื่อช่างกดบันทึกเบิกเสา แอปจะเติมเลข Booking ผู้รับเหมา จำนวน และเลขเสาลงใบ แล้วออกเป็น PDF ให้ทันที นับเฉพาะเสาที่เบิกตั้งแต่วันที่พิมพ์ในใบ</p>
-        <label class="filebtn primary" id="formBtn">อัปใบเบิกเปล่า (.pdf)<input type="file" id="inForm" accept="application/pdf,.pdf" multiple></label>
+        <div class="row-actions">
+          <label class="filebtn primary" id="formBtn">อัปใบเบิกเปล่า (.pdf)<input type="file" id="inForm" accept="application/pdf,.pdf" multiple></label>
+          <button type="button" id="btnFolder">ดึงใบจากโฟลเดอร์ไดรฟ์</button>
+        </div>
+        <p class="note" id="folderNote">หรือลากไฟล์ PDF ใส่โฟลเดอร์ <a id="folderLink" target="_blank" rel="noopener">กองเสา 3D - ใบเบิกเปล่า</a> ใน Google ไดรฟ์ แล้วกด ดึงใบจากโฟลเดอร์ไดรฟ์ แอปจะอ่านเฉพาะไฟล์ที่ยังไม่เคยดึง</p>
         <p class="status" id="formStatus" role="status"></p>
         <div id="formsList" class="col"></div>
         <hr>
@@ -657,7 +661,7 @@ details.edit .fields{margin-top:6px}
   // every server answer carries the whole state; show it
   var BUSY_TEXT = { withdraw: "กำลังบันทึกการเบิก", undo: "กำลังยกเลิกรายการ", undoPoles: "กำลังยกเลิกเสา", upload: "กำลังอัปข้อมูล WBS",
     addPile: "กำลังสร้างกองเสา", deletePile: "กำลังลบกอง", mergePiles: "กำลังรวมกอง", setPositions: "กำลังบันทึกตำแหน่งกอง",
-    setOrder: "กำลังบันทึกเลขที่ใบสั่ง", addPhoto: "กำลังส่งรูป", uploadForms: "กำลังอัปใบเบิกเปล่า", deleteForm: "กำลังลบใบเบิกเปล่า", getForm: "กำลังเตรียมใบเบิก", checkAdmin: "กำลังตรวจรหัสผู้ดูแล" };
+    setOrder: "กำลังบันทึกเลขที่ใบสั่ง", addPhoto: "กำลังส่งรูป", uploadForms: "กำลังอัปใบเบิกเปล่า", registerForms: "กำลังบันทึกใบเบิกเปล่า", listFolderForms: "กำลังดูไฟล์ในโฟลเดอร์ไดรฟ์", deleteForm: "กำลังลบใบเบิกเปล่า", getForm: "กำลังเตรียมใบเบิก", checkAdmin: "กำลังตรวจรหัสผู้ดูแล" };
   // a small spinning pill while something the user pressed is on its way; the 20-second refresh stays silent
   var busyCount = 0;
   function busyOn(text){
@@ -1599,9 +1603,12 @@ details.edit .fields{margin-top:6px}
     return b;
   }
   function readFormFile(file){
-    return Promise.all([needLib(LIB.pdfjs, "pdfjsLib"), file.arrayBuffer()]).then(function(r){
-      var lib = r[0], buf = r[1], u8 = new Uint8Array(buf);
-      if (String.fromCharCode.apply(null, u8.subarray(0, 5)) !== "%PDF-") throw new Error(file.name + ": ไม่ใช่ไฟล์ PDF");
+    return file.arrayBuffer().then(function(buf){ return readFormBytes(new Uint8Array(buf), file.name); });
+  }
+  // read every page of a ZPSF009 PDF: the job, network, date and where the pole rows sit
+  function readFormBytes(u8, name){
+    if (String.fromCharCode.apply(null, u8.subarray(0, 5)) !== "%PDF-") return Promise.reject(new Error(name + ": ไม่ใช่ไฟล์ PDF"));
+    return needLib(LIB.pdfjs, "pdfjsLib").then(function(lib){
       var data = bytesB64(u8);
       lib.GlobalWorkerOptions.workerSrc = LIB.pdfjs.replace("pdf.min.js", "pdf.worker.min.js");
       return lib.getDocument({ data: u8.slice() }).promise.then(function(doc){
@@ -1619,9 +1626,47 @@ details.edit .fields{margin-top:6px}
           });
         }
         return one().then(function(){ return { data: data, pages: pages }; });
-      });
+      }, function(){ throw new Error(name + ": เปิดไฟล์ PDF ไม่ได้ ไฟล์อาจเสีย ลองสั่งพิมพ์จาก SAP ใหม่"); });
     });
   }
+  function pagesSaid(name, pages){
+    var miss = pages.filter(function(p){ return !p.known; });
+    return name + ": " + pages.length + " หน้า " + pages.map(function(p){ return p.wbs; }).join(", ") +
+      (miss.length ? " (" + miss.length + " หน้าไม่ตรงกับ WBS ปัจจุบัน เก็บไว้ตามเลขในใบ)" : "");
+  }
+  var NO_WBS = ": ไม่พบเลขใบสั่งงาน ต้องเป็น PDF ที่สั่งพิมพ์จาก SAP (ZPSF009) ไม่ใช่รูปถ่ายหรือสแกน";
+  // forms dropped straight into the Drive folder: read the ones not seen yet and register them, one file at a time
+  $("btnFolder").addEventListener("click", function(){
+    var code = adminCode(), st = $("formStatus"), btn = this;
+    if (!code) return;
+    st.classList.remove("err");
+    if (!API) { st.textContent = "โหมดทดลองไม่มีโฟลเดอร์ไดรฟ์ ใช้ปุ่ม อัปใบเบิกเปล่า แทน"; return; }
+    btn.disabled = true; st.textContent = "กำลังดูไฟล์ในโฟลเดอร์";
+    request({ action: "listFolderForms", admin: code }, true).then(function(res){
+      var files = res.files || [], said = [], bad = 0, i = 0;
+      if (!files.length) { st.textContent = "ไม่มีไฟล์ใหม่ในโฟลเดอร์ ทุกไฟล์ดึงเข้าระบบแล้ว"; return; }
+      return new Promise(function(done){
+        (function next(){
+          if (i >= files.length) { done(); return; }
+          var f = files[i++];
+          st.textContent = "กำลังอ่าน " + i + "/" + files.length + ": " + f.name;
+          var off = busyOn("กำลังอ่าน " + f.name);
+          call({ action: "readFolderFile", admin: code, fileId: f.fileId }).then(function(r){
+            off();
+            if (!r || !r.ok) throw new Error(f.name + ": " + (r && r.error || "อ่านไฟล์ไม่สำเร็จ"));
+            return readFormBytes(b64Bytes(r.data), f.name);
+          }, function(e){ off(); throw new Error(f.name + ": เชื่อมต่อ Google Sheet ไม่ได้"); }).then(function(r){
+            var pages = r.pages.filter(function(p){ return p.wbs; });
+            if (!pages.length) throw new Error(f.name + NO_WBS);
+            return request({ action: "registerForms", admin: code, fileId: f.fileId, pages: pages }, true).then(function(){ said.push(pagesSaid(f.name, pages)); });
+          }).catch(function(e){ bad++; said.push(e.message); }).then(next);
+        })();
+      }).then(function(){
+        st.classList.toggle("err", bad > 0);
+        st.textContent = "ดึงจากโฟลเดอร์ " + (files.length - bad) + "/" + files.length + " ไฟล์ · " + said.join(" · ");
+      });
+    }).catch(function(e){ st.classList.add("err"); st.textContent = e.message; }).then(function(){ btn.disabled = false; });
+  });
   $("inForm").addEventListener("change", function(){
     var files = Array.from(this.files || []); this.value = "";
     if (!files.length) return;
@@ -1633,18 +1678,17 @@ details.edit .fields{margin-top:6px}
       var f = files[i++];
       readFormFile(f).then(function(r){
         var pages = r.pages.filter(function(p){ return p.wbs; });
-        if (!pages.length) throw new Error(f.name + ": ไม่พบเลขใบสั่งงาน ต้องเป็น PDF ที่สั่งพิมพ์จาก SAP (ZPSF009) ไม่ใช่รูปถ่ายหรือสแกน");
-        var miss = pages.filter(function(p){ return !p.known; });
-        return request({ action: "uploadForms", admin: code, name: f.name, data: r.data, pages: pages }, true).then(function(){
-          said.push(f.name + ": " + pages.length + " หน้า " + pages.map(function(p){ return p.wbs; }).join(", ") +
-            (miss.length ? " (" + miss.length + " หน้าไม่ตรงกับ WBS ปัจจุบัน เก็บไว้ตามเลขในใบ)" : ""));
-        });
+        if (!pages.length) throw new Error(f.name + NO_WBS);
+        return request({ action: "uploadForms", admin: code, name: f.name, data: r.data, pages: pages }, true).then(function(){ said.push(pagesSaid(f.name, pages)); });
       }).then(next, function(e){ st.classList.add("err"); st.textContent = (said.length ? said.join(" · ") + " · " : "") + e.message; });
     })();
   });
   // admin list: every job in the WBS data, the ones with a blank form first
   function renderForms(){
     var box = $("formsList"); box.textContent = "";
+    var fl = $("folderLink");
+    if (state.formFolder) fl.href = "https://drive.google.com/drive/folders/" + encodeURIComponent(state.formFolder); else fl.removeAttribute("href");
+    $("btnFolder").hidden = $("folderNote").hidden = !API;
     var jobs = {}, order = [];
     state.demand.forEach(function(l){ if (!jobs[l.wbs]) { jobs[l.wbs] = { wbs: l.wbs, job: l.job }; order.push(l.wbs); } });
     (state.forms || []).forEach(function(f){ if (!jobs[f.wbs]) { jobs[f.wbs] = { wbs: f.wbs, job: "", gone: true }; order.push(f.wbs); } });
