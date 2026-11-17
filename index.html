@@ -319,6 +319,7 @@ details.edit .fields{margin-top:6px}
           <button type="button" class="small" id="dToday">วันนี้</button>
           <span style="flex:1"></span>
           <button type="button" class="small" id="dXlsx">ดาวน์โหลด Excel</button>
+          <button type="button" class="small" id="dForms">รวมใบเบิก PDF</button>
           <button type="button" class="small" id="dReload">รีเฟรช</button>
         </div>
         <p class="status" id="dStatus" role="status"></p>
@@ -348,6 +349,7 @@ details.edit .fields{margin-top:6px}
             <tfoot></tfoot>
           </table>
         </div>
+        <p class="note">รวมใบเบิก PDF: ทุกงานที่มีใบเปล่าและมีการเบิกในช่วงวันที่ที่เลือก งานละ 1 หน้า ในแต่ละหน้าใส่เสาของงานนั้นทั้งหมดตั้งแต่วันที่ในใบ เหมือนใบที่ออกตอนเบิก</p>
         <p class="note">นับจากประวัติการเบิกในแอปทั้งหมด รายการที่ยกเลิกแล้วไม่ถูกนับ ช่อง ยังเบิกได้ มาจากไฟล์ zcn52n ล่าสุดหักยอดที่เบิกในแอป</p>
       </div>
 
@@ -1497,47 +1499,58 @@ details.edit .fields{margin-top:6px}
       return (formBytes[fileId] = b64Bytes(res.data));
     }, function(e){ done(); throw new Error(e && e.message && !/fetch/i.test(e.message) ? e.message : "เชื่อมต่อ Google Sheet ไม่ได้ ตรวจอินเทอร์เน็ตแล้วลองใหม่"); });
   }
-  function buildFormPdf(form){
-    var plan = formPlan(form, state.log, state.demand);
+  // one or more forms, each filled in and copied into a single PDF (one page per job)
+  function buildFormPdf(forms, log){
     var fonts = document.fonts && document.fonts.load ? document.fonts.load("700 12px " + cssVar("--font-body")).catch(function(){}) : null;
-    return Promise.all([needLib(LIB.pdflib, "PDFLib"), getFormBytes(form.fileId), fonts]).then(function(r){
-      var L = r[0];
-      return Promise.all([L.PDFDocument.load(r[1]), L.PDFDocument.create()]).then(function(d){
-        var src = d[0], doc = d[1];
-        return doc.copyPages(src, [Math.min(form.page, src.getPageCount()) - 1]).then(function(pp){
-          var page = doc.addPage(pp[0]), sz = page.getSize(), lay = form.layout || {}, sx = sz.width / 792, jobs = [];
-          function put(lines, pt, bold, maxW, place){
-            var im = inkPng(lines, pt, bold), k = Math.min(1, maxW / im.w);
-            jobs.push(doc.embedPng(im.url).then(function(png){
-              var at = place(im.w * k, im.h * k, im.base * k);
-              page.drawImage(png, { x: at[0], y: at[1], width: im.w * k, height: im.h * k });
-            }));
-          }
-          var head = [plan.booking, plan.contractor].filter(Boolean);           // top right, beside the date
-          if (head.length) put(head, 13, true, 200 * sx, function(w, h){ return [665 * sx - w, Math.min(sz.height - 3, (lay.head || sz.height - 36) + 16) - h]; });
-          plan.rows.forEach(function(row){                                      // the "จำนวนเบิกครั้งนี้" column
-            if (row.labels.length) put([String(row.labels.length)], 11, true, 70 * sx, function(w, h, base){ return [552 * sx - w, row.y - base]; });
-          });
-          var blocks = plan.rows.filter(function(row){ return row.labels.length; }), many = blocks.length > 1;
-          if (blocks.length) {                                                  // the pole numbers, under the signatures
-            var top = (lay.sig || 300) - 38, room = top - 14, left = 345 * sx, per = 10, pt = 12;
-            var text = function(){
-              var out = [];
-              blocks.forEach(function(row){
-                out.push("เลขเสา" + (many ? " " + shortType(types[row.mat] || row.mat) : "") + " " + row.labels.length + " ต้น");
-                for (var i = 0; i < row.labels.length; i += per) out.push(row.labels.slice(i, i + per).join(", "));
-              });
-              return out;
-            };
-            var ls = text();
-            if (ls.length * pt * 1.45 > room) { left = 30 * sx; per = 16; ls = text(); }
-            while (ls.length * pt * 1.45 > room && pt > 6) pt -= 1;
-            put(ls, pt, false, sz.width - left - 16, function(w, h){ return [left, top - h]; });
-          }
-          return Promise.all(jobs).then(function(){ return doc.save(); });
+    var files = {}; forms.forEach(function(f){ files[f.fileId] = 1; });
+    return Promise.all([needLib(LIB.pdflib, "PDFLib"), fonts].concat(Object.keys(files).map(function(id){
+      return getFormBytes(id).then(function(b){ files[id] = b; });
+    }))).then(function(r){
+      var L = r[0], srcs = {};
+      return L.PDFDocument.create().then(function(doc){
+        var chain = Promise.resolve();
+        forms.forEach(function(form){
+          chain = chain.then(function(){
+            return srcs[form.fileId] || (srcs[form.fileId] = L.PDFDocument.load(files[form.fileId]));
+          }).then(function(src){
+            return doc.copyPages(src, [Math.min(form.page, src.getPageCount()) - 1]);
+          }).then(function(pp){ return fillPage(doc, doc.addPage(pp[0]), form, formPlan(form, log, state.demand)); });
         });
+        return chain.then(function(){ return doc.save(); });
       });
     });
+  }
+  function fillPage(doc, page, form, plan){
+    var sz = page.getSize(), lay = form.layout || {}, sx = sz.width / 792, jobs = [];
+    function put(lines, pt, bold, maxW, place){
+      var im = inkPng(lines, pt, bold), k = Math.min(1, maxW / im.w);
+      jobs.push(doc.embedPng(im.url).then(function(png){
+        var at = place(im.w * k, im.h * k, im.base * k);
+        page.drawImage(png, { x: at[0], y: at[1], width: im.w * k, height: im.h * k });
+      }));
+    }
+    var head = [plan.booking, plan.contractor].filter(Boolean);           // top right, beside the date
+    if (head.length) put(head, 13, true, 200 * sx, function(w, h){ return [665 * sx - w, Math.min(sz.height - 3, (lay.head || sz.height - 36) + 16) - h]; });
+    plan.rows.forEach(function(row){                                      // the "จำนวนเบิกครั้งนี้" column
+      if (row.labels.length) put([String(row.labels.length)], 11, true, 70 * sx, function(w, h, base){ return [552 * sx - w, row.y - base]; });
+    });
+    var blocks = plan.rows.filter(function(row){ return row.labels.length; }), many = blocks.length > 1;
+    if (blocks.length) {                                                  // the pole numbers, under the signatures
+      var top = (lay.sig || 300) - 38, room = top - 14, left = 345 * sx, per = 10, pt = 12;
+      var text = function(){
+        var out = [];
+        blocks.forEach(function(row){
+          out.push("เลขเสา" + (many ? " " + shortType(types[row.mat] || row.mat) : "") + " " + row.labels.length + " ต้น");
+          for (var i = 0; i < row.labels.length; i += per) out.push(row.labels.slice(i, i + per).join(", "));
+        });
+        return out;
+      };
+      var ls = text();
+      if (ls.length * pt * 1.45 > room) { left = 30 * sx; per = 16; ls = text(); }
+      while (ls.length * pt * 1.45 > room && pt > 6) pt -= 1;
+      put(ls, pt, false, sz.width - left - 16, function(w, h){ return [left, top - h]; });
+    }
+    return Promise.all(jobs);
   }
   function saveBlob(bytes, name){
     var url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" })), a = document.createElement("a");
@@ -1548,7 +1561,7 @@ details.edit .fields{margin-top:6px}
     var f = formOf(wbs);
     if (!f) return Promise.resolve(false);
     if (!formPlan(f, state.log, state.demand).total) { toast("งาน " + wbs + " ยังไม่มีเสาที่เบิกตั้งแต่วันที่ " + (f.date || "ในใบ")); return Promise.resolve(false); }
-    return buildFormPdf(f).then(function(bytes){
+    return buildFormPdf([f], state.log).then(function(bytes){
       saveBlob(bytes, "ใบเบิก_" + wbs + "_" + new Date().toLocaleString("sv-SE").slice(0, 10) + ".pdf");
       var plan = formPlan(f, state.log, state.demand);
       toast((auto ? "บันทึกแล้ว และออกใบเบิก PDF ให้แล้ว " : "ออกใบเบิก PDF แล้ว ") + wbs + " รวม " + plan.total + " ต้น" +
@@ -2287,6 +2300,26 @@ details.edit .fields{margin-top:6px}
   });
   ["dFrom", "dTo", "dType", "dKind"].forEach(function(id){ $(id).addEventListener("change", renderDash); });
   $("dQ").addEventListener("input", renderDash);
+  // every job that has a blank ZPSF009 and was withdrawn for in the chosen dates, filled in, one PDF to print at once
+  function jobsInRange(log, f){
+    var from = f.from ? new Date(f.from + "T00:00:00").getTime() : -Infinity, to = f.to ? new Date(f.to + "T23:59:59.999").getTime() : Infinity;
+    var seen = {}, out = [];
+    log.forEach(function(e){ if (e.wbs && e.ts >= from && e.ts <= to && !seen[e.wbs]) { seen[e.wbs] = 1; out.push(e.wbs); } });
+    return out;
+  }
+  $("dForms").addEventListener("click", function(){
+    var b = this, log = dashLog || state.log, f = dashFilter(), st = $("dStatus");
+    var wbs = jobsInRange(log, f), lack = wbs.filter(function(w){ return !formOf(w); });
+    var forms = wbs.map(formOf).filter(function(fm){ return fm && formPlan(fm, log, state.demand).total; });
+    var miss = lack.length ? " · ยังไม่มีใบเปล่า " + lack.length + " งาน: " + lack.join(", ") : "";
+    st.classList.remove("err");
+    if (!forms.length) { st.textContent = "ไม่มีงานที่มีใบเปล่าและมีการเบิกในช่วงวันที่นี้" + miss; return; }
+    b.disabled = true; st.textContent = "กำลังรวมใบเบิก " + forms.length + " งาน";
+    buildFormPdf(forms, log).then(function(bytes){
+      saveBlob(bytes, "ใบเบิกรวม_" + (f.from || "เริ่มต้น") + "_ถึง_" + (f.to || new Date().toLocaleString("sv-SE").slice(0, 10)) + ".pdf");
+      st.textContent = "รวมใบเบิกแล้ว " + forms.length + " หน้า: " + forms.map(function(fm){ return fm.wbs; }).join(", ") + miss;
+    }, function(e){ st.classList.add("err"); st.textContent = "รวมใบเบิกไม่สำเร็จ: " + e.message; }).then(function(){ b.disabled = false; });
+  });
   function setRange(from, to){ $("dFrom").value = from; $("dTo").value = to; renderDash(); }
   $("dAll").addEventListener("click", function(){ setRange("", ""); });
   $("dToday").addEventListener("click", function(){ var d = ymd(new Date()); setRange(d, d); });
