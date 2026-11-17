@@ -106,6 +106,39 @@ button:disabled{opacity:.5;cursor:default}
 .form-row .form-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
 .form-row .form-txt b{overflow-wrap:anywhere}
 .form-row .pill{align-self:flex-start;white-space:normal}
+.sgm{position:fixed;inset:0;z-index:40;background:#e7eaef;display:flex;flex-direction:column}
+.sgm[hidden]{display:none}
+.sgbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+.sgbar b{font-family:var(--font-display);font-size:16px;margin-right:auto;min-width:0;overflow-wrap:anywhere}
+.sgbody{flex:1;display:flex;min-height:0}
+.sgside{width:250px;flex-shrink:0;overflow:auto;background:var(--panel);border-right:1px solid var(--line);padding:10px;display:flex;flex-direction:column;gap:10px}
+.sgside label{font-size:13px;font-weight:600;display:flex;flex-direction:column;gap:3px}
+.sgpal{display:flex;flex-direction:column;gap:6px}
+.sgpal button{display:flex;flex-direction:column;align-items:stretch;text-align:left;padding:6px;gap:2px}
+.sgpal button img{height:44px;object-fit:contain;pointer-events:none}
+.sgpal button small{color:var(--muted,#667);font-size:12px}
+.sgpal button.on{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 0 0 2px var(--accent)}
+.sgview{flex:1;overflow:auto;padding:16px;display:flex;flex-direction:column;align-items:center;gap:16px}
+.sgpage{position:relative;background:#fff;box-shadow:0 2px 10px rgba(0,0,0,.15);flex-shrink:0}
+.sgpage canvas{display:block}
+.sgm.placing .sgpage{cursor:copy}
+.sgst{position:absolute;touch-action:none;cursor:move;outline:1.5px dashed transparent}
+.sgst img{width:100%;height:100%;display:block;pointer-events:none;user-select:none}
+.sgst.sel{outline-color:var(--accent)}
+.sgst .h,.sgst .x{position:absolute;display:none;border-radius:50%;border:2px solid #fff;touch-action:none}
+.sgst .h{right:-9px;bottom:-9px;width:18px;height:18px;background:var(--accent);cursor:nwse-resize}
+.sgst .x{right:-11px;top:-11px;width:24px;height:24px;background:#c0392b;color:#fff;font-size:13px;line-height:19px;text-align:center;cursor:pointer;padding:0}
+.sgst.sel .h,.sgst.sel .x{display:block}
+.sign-list{display:flex;flex-direction:column;gap:6px}
+.sign-item{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.sign-item img{height:40px;width:90px;object-fit:contain;background:#fff}
+.sign-item div{flex:1;min-width:0;font-size:13px}
+@media (max-width:760px){
+  .sgbody{flex-direction:column}
+  .sgside{width:auto;max-height:38vh;border-right:0;border-bottom:1px solid var(--line)}
+  .sgpal{flex-direction:row;overflow-x:auto}
+  .sgpal button{min-width:120px}
+}
 .form-one{display:flex;flex-direction:column;gap:6px;border-top:1px dashed var(--line);padding-top:6px}
 details.more>summary{cursor:pointer;color:var(--muted,inherit);font-size:14px;padding:4px 0}
 details.more>div{display:flex;flex-direction:column;gap:6px;margin-top:6px}
@@ -375,6 +408,20 @@ details.edit .fields{margin-top:6px}
         <p class="status" id="formStatus" role="status"></p>
         <div id="formsList" class="col"></div>
         <hr>
+        <h3>ลายเซ็น</h3>
+        <p class="note">ใช้วางบนใบเบิก ZPSF009 เก็บในโฟลเดอร์ส่วนตัวในไดรฟ์ของคุณ (ไม่ได้แชร์) แอปดึงมาได้เฉพาะตอนใส่รหัสผู้ดูแล</p>
+        <div class="row-actions">
+          <label class="filebtn" id="signImpBtn">นำเข้าจากไฟล์ใส่ลายเซ็น (.html)<input type="file" id="inSignHtml" accept=".html,.htm,text/html"></label>
+          <button type="button" id="btnSignLoad">แสดงลายเซ็นที่มี</button>
+        </div>
+        <div class="fields">
+          <label for="signName">ชื่อผู้ลงนาม</label><input type="text" id="signName" maxlength="80" placeholder="เช่น นายสมชาย ใจดี">
+          <label for="signTitle">ตำแหน่ง</label><input type="text" id="signTitle" maxlength="80" placeholder="เช่น หผ.ปร.กฟส.ป่าซาง">
+        </div>
+        <label class="filebtn small" id="signPngBtn">เพิ่มลายเซ็นจากรูป (.png พื้นใส)<input type="file" id="inSignPng" accept="image/png"></label>
+        <p class="status" id="signStatus" role="status"></p>
+        <div id="signList" class="sign-list"></div>
+        <hr>
         <h3>กองเสา</h3>
         <div class="row-actions">
           <button type="button" id="btnMove">ย้ายกองเสา</button>
@@ -427,6 +474,25 @@ details.edit .fields{margin-top:6px}
   </aside>
 </div>
 
+<div class="sgm" id="sgm" hidden role="dialog" aria-modal="true" aria-labelledby="sgTitle">
+  <div class="sgbar">
+    <b id="sgTitle">ใบเบิก PDF</b>
+    <button type="button" class="primary" id="sgSave">ดาวน์โหลด PDF</button>
+    <button type="button" id="sgClose">ปิด</button>
+  </div>
+  <div class="sgbody">
+    <div class="sgside">
+      <p class="status" id="sgStatus" role="status"></p>
+      <label>ผู้เบิกพัสดุ<select id="sgSlot0"></select></label>
+      <label>ผู้ลงนามตรวจสอบ<select id="sgSlot1"></select></label>
+      <label>ผู้ลงนามอนุมัติ<select id="sgSlot2"></select></label>
+      <p class="note">ลายเซ็นวางตรงเส้นให้เองทุกหน้า ลากเพื่อย้าย · ลากจุดมุมขวาล่างเพื่อย่อขยาย · ✕ ลบ</p>
+      <p class="note">วางเพิ่มเอง: แตะชื่อ แล้วแตะตรงที่จะเซ็นบนใบ</p>
+      <div class="sgpal" id="sgPal"></div>
+    </div>
+    <div class="sgview" id="sgView"></div>
+  </div>
+</div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -635,6 +701,18 @@ details.edit .fields{margin-top:6px}
         var fd = (db.formFiles || {})[req.fileId];
         if (!fd || !(db.forms || []).some(function(f){ return f.fileId === req.fileId; })) fail("ไม่พบใบเบิกเปล่านี้ ผู้ดูแลอาจลบหรืออัปใหม่แล้ว");
         return { ok: true, data: fd };
+      } else if (a === "getSigners") {
+        admin();
+        return { ok: true, signers: (db.signers || []).slice() };
+      } else if (a === "addSigner") {
+        admin();
+        if (!String(req.name || "").trim()) fail("ใส่ชื่อผู้ลงนามก่อน");
+        if (!req.data) fail("ไม่มีรูปลายเซ็น");
+        db.signers = (db.signers || []).filter(function(g){ return g.name !== String(req.name).trim(); });
+        db.signers.push({ id: "s" + Date.now().toString(36) + db.signers.length, name: String(req.name).trim(), title: String(req.title || ""), data: req.data });
+      } else if (a === "deleteSigner") {
+        admin();
+        db.signers = (db.signers || []).filter(function(g){ return g.id !== req.id; });
       } else if (a === "checkAdmin") admin();
       else if (a === "log") return { ok: true, state: view(), log: db.log };
       return { ok: true, state: view(), id: newId };
@@ -661,7 +739,7 @@ details.edit .fields{margin-top:6px}
   // every server answer carries the whole state; show it
   var BUSY_TEXT = { withdraw: "กำลังบันทึกการเบิก", undo: "กำลังยกเลิกรายการ", undoPoles: "กำลังยกเลิกเสา", upload: "กำลังอัปข้อมูล WBS",
     addPile: "กำลังสร้างกองเสา", deletePile: "กำลังลบกอง", mergePiles: "กำลังรวมกอง", setPositions: "กำลังบันทึกตำแหน่งกอง",
-    setOrder: "กำลังบันทึกเลขที่ใบสั่ง", addPhoto: "กำลังส่งรูป", uploadForms: "กำลังอัปใบเบิกเปล่า", registerForms: "กำลังบันทึกใบเบิกเปล่า", listFolderForms: "กำลังดูไฟล์ในโฟลเดอร์ไดรฟ์", deleteForm: "กำลังลบใบเบิกเปล่า", getForm: "กำลังเตรียมใบเบิก", checkAdmin: "กำลังตรวจรหัสผู้ดูแล" };
+    setOrder: "กำลังบันทึกเลขที่ใบสั่ง", addPhoto: "กำลังส่งรูป", uploadForms: "กำลังอัปใบเบิกเปล่า", registerForms: "กำลังบันทึกใบเบิกเปล่า", addSigner: "กำลังเพิ่มลายเซ็น", deleteSigner: "กำลังลบลายเซ็น", listFolderForms: "กำลังดูไฟล์ในโฟลเดอร์ไดรฟ์", deleteForm: "กำลังลบใบเบิกเปล่า", getForm: "กำลังเตรียมใบเบิก", checkAdmin: "กำลังตรวจรหัสผู้ดูแล" };
   // a small spinning pill while something the user pressed is on its way; the 20-second refresh stays silent
   var busyCount = 0;
   function busyOn(text){
@@ -1463,7 +1541,12 @@ details.edit .fields{margin-top:6px}
         if (nums.length >= 3 && nums[1][1] > nums[1][0] && nums[2][1] > nums[1][1]) row.col = Math.round((nums[1][1] + nums[2][1]) / 2);
         out.layout.rows.push(row);
       }
-      if (!out.layout.sig && /ตรวจสอบ/.test(l.text)) out.layout.sig = Math.round(l.y);
+      if (!out.layout.sig && /ตรวจสอบ/.test(l.text)) {
+        out.layout.sig = Math.round(l.y);
+        // the dotted lines to sign on: ผู้เบิกพัสดุ, ผู้ลงนามตรวจสอบ, ผู้ลงนามอนุมัติ (left to right)
+        out.layout.slots = l.parts.filter(function(p){ return /^\.{3,}$/.test(zClean(p.str)); })
+          .map(function(p){ return [Math.round(p.x), Math.round(p.x + (p.w || 0))]; }).sort(function(a, b){ return a[0] - b[0]; });
+      }
     });
     if (!out.layout.sig) out.layout.sig = out.layout.rows.length ? out.layout.rows[out.layout.rows.length - 1].y - 50 : Math.round(h / 2);
     return out;
@@ -1546,7 +1629,7 @@ details.edit .fields{margin-top:6px}
     }))).then(function(r){
       var L = r[0], srcs = {};
       return L.PDFDocument.create().then(function(doc){
-        var chain = Promise.resolve();
+        var chain = Promise.resolve(), out = [];
         forms.forEach(function(form){
           chain = chain.then(function(){
             return srcs[form.fileId] || (srcs[form.fileId] = L.PDFDocument.load(files[form.fileId]));
@@ -1554,17 +1637,19 @@ details.edit .fields{margin-top:6px}
             return doc.copyPages(src, [Math.min(form.page, src.getPageCount()) - 1]);
           }).then(function(pp){
             var page = doc.addPage(pp[0]), rows = (form.layout || {}).rows || [];
-            var need = rows.some(function(r){ return !r.col; });
+            var need = rows.some(function(r){ return !r.col; }) || !(form.layout || {}).slots;
             return (need ? freshLayout(files[form.fileId], form.page).catch(function(){ return null; }) : Promise.resolve(null)).then(function(lay){
               var f = form;
-              if (lay) f = Object.assign({}, form, { layout: Object.assign({}, form.layout, { rows: rows.map(function(r){
+              if (lay) f = Object.assign({}, form, { layout: Object.assign({}, form.layout, { sig: lay.sig || form.layout.sig, slots: lay.slots, rows: rows.map(function(r){
                 var n = lay.rows.filter(function(q){ return q.mat === r.mat; })[0]; return n ? Object.assign({}, r, { col: n.col, y: n.y }) : r;
               }) }) });
+              var sz = page.getSize();
+              out.push({ w: sz.width, h: sz.height, sig: (f.layout || {}).sig, slots: (f.layout || {}).slots || [] });
               return fillPage(doc, page, f, planOf(form, log));
             });
           });
         });
-        return chain.then(function(){ return doc.save(); });
+        return chain.then(function(){ return doc.save(); }).then(function(bytes){ return { bytes: bytes, pages: out }; });
       });
     });
   }
@@ -1583,7 +1668,7 @@ details.edit .fields{margin-top:6px}
     // under the signatures: the pole numbers, then the booking and contractor
     var head = [plan.booking, plan.contractor].filter(Boolean);
     var blocks = plan.rows.filter(function(row){ return row.labels.length; }), many = blocks.length > 1;
-    var top = (lay.sig || 300) - 38, room = top - 14, left = 345 * sx, per = 10, pt = 12, headPt = 13;
+    var top = (lay.sig || 300) - 72, room = top - 14, left = 345 * sx, per = 10, pt = 12, headPt = 13;   // room above for the signatures
     var text = function(){
       var out = [];
       blocks.forEach(function(row){
@@ -1607,12 +1692,13 @@ details.edit .fields{margin-top:6px}
     setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
   }
   function formName(f){ return formMats(f).map(function(m){ return shortType(types[m] || m); }).join(" + "); }
+  function formFile(f){ return "ใบเบิก_" + f.wbs + (formsOf(f.wbs).length > 1 ? "_" + formName(f).replace(/\s+/g, "") : "") + "_" + new Date().toLocaleString("sv-SE").slice(0, 10) + ".pdf"; }
   function makeForm(f, auto){
     if (!f) return Promise.resolve(false);
     var plan = planOf(f);
     if (!plan.total) { toast("ใบ " + f.wbs + " (" + formName(f) + ") ยังไม่มีเสาที่เบิกตั้งแต่วันที่ " + (f.date || "ในใบ")); return Promise.resolve(false); }
-    return buildFormPdf([f], state.log).then(function(bytes){
-      saveBlob(bytes, "ใบเบิก_" + f.wbs + (formsOf(f.wbs).length > 1 ? "_" + formName(f).replace(/\s+/g, "") : "") + "_" + new Date().toLocaleString("sv-SE").slice(0, 10) + ".pdf");
+    return buildFormPdf([f], state.log).then(function(res){
+      saveBlob(res.bytes, formFile(f));
       toast((auto ? "บันทึกแล้ว และออกใบเบิก PDF ให้แล้ว " : "ออกใบเบิก PDF แล้ว ") + f.wbs + " " + formName(f) + " รวม " + plan.total + " ต้น" +
             (plan.stray ? " (มีเสา " + plan.stray + " รายการที่ยังไม่มีใบเปล่าของชนิดนั้น)" : ""));
       return true;
@@ -1626,7 +1712,10 @@ details.edit .fields{margin-top:6px}
     var f = isForm ? x : formForEntry(x, state.forms);
     if (!f) return null;
     var b = el("button", "small", "ใบเบิก PDF"); b.type = "button";
-    b.addEventListener("click", function(){ b.disabled = true; makeForm(f).then(function(){ b.disabled = false; }); });
+    b.addEventListener("click", function(){
+      if ($("inAdmin").value) { openSigner([f], state.log, formFile(f)); return; }      // admin: add signatures before downloading
+      b.disabled = true; makeForm(f).then(function(){ b.disabled = false; });
+    });
     return b;
   }
   function readFormFile(file){
@@ -1748,6 +1837,237 @@ details.edit .fields{margin-top:6px}
       det.appendChild(sum); lack.forEach(function(w){ inner.appendChild(row(w)); }); det.appendChild(inner); box.appendChild(det);
     }
   }
+
+  /* ---------- signatures on the withdrawal forms ---------- */
+  // The pictures live in a private Drive folder; they are fetched only with the admin code and kept in memory, never stored here.
+  var signers = null, signImg = {};
+  function loadSigners(force){
+    var code = $("inAdmin").value;
+    if (!code) return Promise.reject(new Error("ใส่รหัสผู้ดูแลก่อน"));
+    if (signers && !force) return Promise.resolve(signers);
+    var off = busyOn("กำลังโหลดลายเซ็น");
+    return call({ action: "getSigners", admin: code }).then(function(r){
+      off();
+      if (!r || !r.ok) throw new Error(r && r.error || "โหลดลายเซ็นไม่สำเร็จ");
+      signers = r.signers || [];
+      return Promise.all(signers.map(function(g){
+        return new Promise(function(ok){
+          var im = new Image(); im.onload = function(){ signImg[g.id] = im; ok(); }; im.onerror = function(){ ok(); };
+          im.src = "data:image/png;base64," + g.data;
+        });
+      })).then(function(){ return signers; });
+    }, function(){ off(); throw new Error("เชื่อมต่อ Google Sheet ไม่ได้"); });
+  }
+  function renderSignList(){
+    var box = $("signList"); box.textContent = "";
+    (signers || []).forEach(function(g){
+      var r = el("div", "sign-item"), im = document.createElement("img"); im.src = "data:image/png;base64," + g.data; im.alt = "";
+      var t = el("div"); t.appendChild(el("b", null, g.name)); t.appendChild(el("div", "note", g.title || ""));
+      var d = el("button", "small", "ลบ"); d.type = "button";
+      twoStep(d, "ลบ", function(){
+        var code = adminCode(); if (!code) return;
+        request({ action: "deleteSigner", admin: code, id: g.id }, true).then(function(){ return loadSigners(true); })
+          .then(function(){ renderSignList(); toast("ลบลายเซ็น " + g.name + " แล้ว"); }, function(e){ toast(e.message); });
+      });
+      r.appendChild(im); r.appendChild(t); r.appendChild(d); box.appendChild(r);
+    });
+    if (signers && !signers.length) box.appendChild(el("p", "note", "ยังไม่มีลายเซ็น"));
+  }
+  function signSay(t, err){ var st = $("signStatus"); st.textContent = t || ""; st.classList.toggle("err", !!err); }
+  $("btnSignLoad").addEventListener("click", function(){
+    loadSigners(true).then(function(){ renderSignList(); signSay(signers.length + " คน"); }, function(e){ signSay(e.message, true); });
+  });
+  function addSigners(list){                      // one at a time, then show what is there
+    var code = adminCode(); if (!code) return;
+    var i = 0, done = 0;
+    (function next(){
+      if (i >= list.length) {
+        loadSigners(true).then(function(){ renderSignList(); signSay("เพิ่มลายเซ็นแล้ว " + done + " คน"); }, function(e){ signSay(e.message, true); });
+        return;
+      }
+      var g = list[i++];
+      signSay("กำลังเพิ่ม " + i + "/" + list.length + ": " + g.name);
+      request({ action: "addSigner", admin: code, name: g.name, title: g.title, data: g.data }, true).then(function(){ done++; next(); },
+        function(e){ signSay(g.name + ": " + e.message, true); });
+    })();
+  }
+  // the signature app (ใส่ลายเซ็น PDF) keeps its signers as  const SIGNERS = [{id, name, title, src: "data:image/png;base64,..."}]
+  $("inSignHtml").addEventListener("change", function(){
+    var f = this.files && this.files[0]; this.value = "";
+    if (!f) return;
+    f.text().then(function(t){
+      var m = t.match(/const\s+SIGNERS\s*=\s*(\[[\s\S]*?\]);?\s*\n/), list;
+      try { list = JSON.parse(m[1]); } catch (e) { list = null; }
+      if (!list || !list.length) { signSay("ไม่พบรายชื่อลายเซ็นในไฟล์นี้ ต้องเป็นไฟล์จากแอป ใส่ลายเซ็น PDF", true); return; }
+      addSigners(list.filter(function(g){ return /^data:image\/png;base64,/.test(g.src || ""); })
+        .map(function(g){ return { name: String(g.name || ""), title: String(g.title || ""), data: g.src.split(",")[1] }; }));
+    });
+  });
+  $("inSignPng").addEventListener("change", function(){
+    var f = this.files && this.files[0]; this.value = "";
+    if (!f) return;
+    var name = $("signName").value.trim();
+    if (!name) { signSay("ใส่ชื่อผู้ลงนามก่อน แล้วค่อยเลือกรูป", true); $("signName").focus(); return; }
+    f.arrayBuffer().then(function(b){
+      addSigners([{ name: name, title: $("signTitle").value.trim(), data: bytesB64(new Uint8Array(b)) }]);
+      $("signName").value = ""; $("signTitle").value = "";
+    });
+  });
+
+  // ----- the editor: the filled form(s) with the signatures laid on, ready to download -----
+  var sg = null;                                   // { bytes, pages:[{w,h,sig,slots}], stamps:[{id,sid,page,x,y,w,slot}], name, scale:[] }
+  var SLOT_W = 96;
+  function ratioOf(sid){ var im = signImg[sid]; return im && im.naturalWidth ? im.naturalHeight / im.naturalWidth : 0.5; }
+  function slotPick(i){ try { return JSON.parse(lsGet("pole-sign-slots") || "[]")[i] || ""; } catch (e) { return ""; } }
+  function openSigner(forms, log, fileName){
+    var st = $("sgStatus");
+    $("sgTitle").textContent = forms.length > 1 ? "ใบเบิกรวม " + forms.length + " ใบ" : "ใบเบิก " + forms[0].wbs + " " + formName(forms[0]);
+    $("sgView").textContent = ""; st.textContent = "กำลังเตรียมใบ"; st.classList.remove("err");
+    $("sgm").hidden = false; document.body.style.overflow = "hidden";
+    sg = { stamps: [], name: fileName, seq: 0, placing: null };
+    return Promise.all([buildFormPdf(forms, log), loadSigners().catch(function(e){ return e; })]).then(function(r){
+      sg.bytes = r[0].bytes; sg.pages = r[0].pages;
+      if (r[1] instanceof Error) { st.textContent = "ไม่มีลายเซ็น: " + r[1].message; st.classList.add("err"); }
+      else if (!signers.length) st.textContent = "ยังไม่มีลายเซ็น นำเข้าได้ในแท็บ ผู้ดูแล หัวข้อ ลายเซ็น";
+      else st.textContent = "";
+      fillSlotPickers(); renderPal();
+      return drawPages().then(function(){ [0, 1, 2].forEach(placeSlot); });
+    }).catch(function(e){ st.textContent = "เตรียมใบไม่สำเร็จ: " + e.message; st.classList.add("err"); });
+  }
+  function closeSigner(){ $("sgm").hidden = true; document.body.style.overflow = ""; sg = null; $("sgView").textContent = ""; }
+  $("sgClose").addEventListener("click", closeSigner);
+  function fillSlotPickers(){
+    [0, 1, 2].forEach(function(i){
+      var sel = $("sgSlot" + i), want = slotPick(i); sel.textContent = "";
+      var o = el("option", null, "ไม่เซ็น"); o.value = ""; sel.appendChild(o);
+      (signers || []).forEach(function(g){ var q = el("option", null, g.name + (g.title ? " · " + g.title : "")); q.value = g.id; sel.appendChild(q); });
+      sel.value = (signers || []).some(function(g){ return g.id === want; }) ? want : "";
+      sel.disabled = !(signers && signers.length);
+    });
+  }
+  [0, 1, 2].forEach(function(i){
+    $("sgSlot" + i).addEventListener("change", function(){
+      var keep; try { keep = JSON.parse(lsGet("pole-sign-slots") || "[]"); } catch (e) { keep = []; }
+      keep[i] = this.value; lsSet("pole-sign-slots", JSON.stringify(keep));
+      placeSlot(i);
+    });
+  });
+  function renderPal(){
+    var box = $("sgPal"); box.textContent = "";
+    (signers || []).forEach(function(g){
+      var b = el("button"); b.type = "button"; b.dataset.sid = g.id;
+      var im = document.createElement("img"); im.src = signImg[g.id] ? signImg[g.id].src : ""; im.alt = "";
+      b.appendChild(im); b.appendChild(el("span", null, g.name)); b.appendChild(el("small", null, g.title || ""));
+      b.addEventListener("click", function(){ setPlace(sg && sg.placing === g.id ? null : g.id); });
+      box.appendChild(b);
+    });
+  }
+  function setPlace(sid){
+    if (!sg) return;
+    sg.placing = sid;
+    $("sgm").classList.toggle("placing", !!sid);
+    Array.prototype.forEach.call($("sgPal").children, function(b){ b.classList.toggle("on", b.dataset.sid === sid); });
+  }
+  function drawPages(){
+    var view = $("sgView");
+    return needLib(LIB.pdfjs, "pdfjsLib").then(function(lib){
+      lib.GlobalWorkerOptions.workerSrc = LIB.pdfjs.replace("pdf.min.js", "pdf.worker.min.js");
+      return lib.getDocument({ data: sg.bytes.slice() }).promise;
+    }).then(function(doc){
+      var chain = Promise.resolve(), avail = Math.max(280, view.clientWidth - 32);
+      sg.pages.forEach(function(pg, i){
+        chain = chain.then(function(){ return doc.getPage(i + 1); }).then(function(page){
+          var base = page.getViewport({ scale: 1 }), k = Math.min(1.6, avail / base.width), vp = page.getViewport({ scale: k });
+          var dpr = Math.min(window.devicePixelRatio || 1, 2), cv = document.createElement("canvas");
+          cv.width = Math.round(vp.width * dpr); cv.height = Math.round(vp.height * dpr);
+          cv.style.width = vp.width + "px"; cv.style.height = vp.height + "px";
+          var box = el("div", "sgpage"); box.style.width = vp.width + "px"; box.style.height = vp.height + "px"; box.appendChild(cv);
+          pg.k = k; pg.el = box;
+          box.addEventListener("pointerdown", function(ev){
+            if (ev.target !== cv) return;
+            if (sg.placing) {
+              var r = box.getBoundingClientRect(), w = SLOT_W, h = w * ratioOf(sg.placing);
+              addStamp({ sid: sg.placing, page: i, x: (ev.clientX - r.left) / k - w / 2, y: (ev.clientY - r.top) / k - h / 2, w: w });
+              setPlace(null);
+            } else selectStamp(null);
+          });
+          view.appendChild(box);
+          return page.render({ canvasContext: cv.getContext("2d"), viewport: page.getViewport({ scale: k * dpr }) }).promise;
+        });
+      });
+      return chain;
+    });
+  }
+  // put the chosen person on line i of every page: centred on the dotted line, the picture sitting just above it
+  function placeSlot(i){
+    if (!sg || !sg.pages) return;
+    sg.stamps.filter(function(t){ return t.slot === i; }).forEach(function(t){ removeStamp(t.id); });
+    var sid = $("sgSlot" + i).value; if (!sid) return;
+    sg.pages.forEach(function(pg, p){
+      var dots = pg.slots[i]; if (!dots || !pg.sig) return;
+      var w = SLOT_W, h = w * ratioOf(sid), cx = (dots[0] + dots[1]) / 2;
+      addStamp({ sid: sid, page: p, x: cx - w / 2, y: pg.h - pg.sig - h * 0.62, w: w, slot: i });
+    });
+  }
+  function addStamp(t){ t.id = ++sg.seq; sg.stamps.push(t); drawStamp(t); selectStamp(t.id); return t; }
+  function removeStamp(id){
+    var t = sg.stamps.filter(function(q){ return q.id === id; })[0]; if (!t) return;
+    if (t.el) t.el.remove();
+    sg.stamps.splice(sg.stamps.indexOf(t), 1);
+  }
+  function selectStamp(id){ sg.stamps.forEach(function(t){ if (t.el) t.el.classList.toggle("sel", t.id === id); }); }
+  function drawStamp(t){
+    var pg = sg.pages[t.page]; if (!pg || !pg.el) return;
+    var d = t.el; if (!d) {
+      d = t.el = el("div", "sgst");
+      var im = document.createElement("img"); im.src = signImg[t.sid].src; im.alt = ""; d.appendChild(im);
+      var h = el("span", "h"), x = el("button", "x", "✕"); x.type = "button"; x.setAttribute("aria-label", "ลบลายเซ็นนี้");
+      d.appendChild(h); d.appendChild(x);
+      x.addEventListener("pointerdown", function(ev){ ev.stopPropagation(); });
+      x.addEventListener("click", function(ev){ ev.stopPropagation(); removeStamp(t.id); });
+      d.addEventListener("pointerdown", function(ev){ dragStamp(ev, t, ev.target === h ? "size" : "move"); });
+      pg.el.appendChild(d);
+    }
+    var k = pg.k;
+    d.style.left = t.x * k + "px"; d.style.top = t.y * k + "px"; d.style.width = t.w * k + "px"; d.style.height = t.w * ratioOf(t.sid) * k + "px";
+  }
+  function dragStamp(ev, t, mode){
+    ev.preventDefault(); ev.stopPropagation(); selectStamp(t.id);
+    var k = sg.pages[t.page].k, sx = ev.clientX, sy = ev.clientY, x0 = t.x, y0 = t.y, w0 = t.w, tgt = ev.currentTarget;
+    try { tgt.setPointerCapture(ev.pointerId); } catch (e) {}
+    function mv(e){
+      if (mode === "move") { t.x = x0 + (e.clientX - sx) / k; t.y = y0 + (e.clientY - sy) / k; }
+      else t.w = Math.max(24, w0 + (e.clientX - sx) / k);
+      t.slot = undefined;                          // moved by hand: changing the picker no longer moves it
+      drawStamp(t);
+    }
+    function up(){ tgt.removeEventListener("pointermove", mv); tgt.removeEventListener("pointerup", up); tgt.removeEventListener("pointercancel", up); }
+    tgt.addEventListener("pointermove", mv); tgt.addEventListener("pointerup", up); tgt.addEventListener("pointercancel", up);
+  }
+  document.addEventListener("keydown", function(e){
+    if (!sg || $("sgm").hidden) return;
+    if (e.key === "Escape") { if (sg.placing) setPlace(null); else closeSigner(); }
+    if ((e.key === "Delete" || e.key === "Backspace") && !/INPUT|SELECT|TEXTAREA/.test((document.activeElement || {}).tagName || "")) {
+      var on = sg.stamps.filter(function(t){ return t.el && t.el.classList.contains("sel"); })[0]; if (on) { removeStamp(on.id); e.preventDefault(); }
+    }
+  });
+  $("sgSave").addEventListener("click", function(){
+    if (!sg || !sg.bytes) return;
+    var b = this; b.disabled = true;
+    needLib(LIB.pdflib, "PDFLib").then(function(L){
+      return L.PDFDocument.load(sg.bytes).then(function(doc){
+        var pngs = {}, ps = doc.getPages();
+        return Promise.all(sg.stamps.map(function(t){
+          if (!pngs[t.sid]) pngs[t.sid] = doc.embedPng(b64Bytes(signImg[t.sid].src.split(",")[1]));
+          return pngs[t.sid].then(function(png){
+            var pg = ps[t.page], H = pg.getSize().height, h = t.w * ratioOf(t.sid);
+            pg.drawImage(png, { x: t.x, y: H - t.y - h, width: t.w, height: h });
+          });
+        })).then(function(){ return doc.save(); });
+      });
+    }).then(function(bytes){ saveBlob(bytes, sg.name); toast("ดาวน์โหลดใบเบิกพร้อมลายเซ็นแล้ว"); },
+      function(e){ toast("บันทึก PDF ไม่สำเร็จ: " + e.message); }).then(function(){ b.disabled = false; });
+  });
 
   /* ---------- install on the home screen ---------- */
   var installEvt = null;
@@ -2411,9 +2731,14 @@ details.edit .fields{margin-top:6px}
     var lk = Object.keys(lack), miss = lk.length ? " · ยังไม่มีใบเปล่า " + lk.length + " รายการ: " + lk.join(", ") : "";
     st.classList.remove("err");
     if (!forms.length) { st.textContent = "ไม่มีงานที่มีใบเปล่าและมีการเบิกในช่วงวันที่นี้" + miss; return; }
+    var fname = "ใบเบิกรวม_" + (f.from || "เริ่มต้น") + "_ถึง_" + (f.to || new Date().toLocaleString("sv-SE").slice(0, 10)) + ".pdf";
+    if ($("inAdmin").value) {                      // admin: open them with the signatures laid on
+      st.textContent = "เปิดใบเบิก " + forms.length + " หน้า: " + forms.map(function(fm){ return fm.wbs + " " + formName(fm); }).join(", ") + miss;
+      openSigner(forms, log, fname); return;
+    }
     b.disabled = true; st.textContent = "กำลังรวมใบเบิก " + forms.length + " ใบ";
-    buildFormPdf(forms, log).then(function(bytes){
-      saveBlob(bytes, "ใบเบิกรวม_" + (f.from || "เริ่มต้น") + "_ถึง_" + (f.to || new Date().toLocaleString("sv-SE").slice(0, 10)) + ".pdf");
+    buildFormPdf(forms, log).then(function(res){
+      saveBlob(res.bytes, fname);
       st.textContent = "รวมใบเบิกแล้ว " + forms.length + " หน้า: " + forms.map(function(fm){ return fm.wbs + " " + formName(fm); }).join(", ") + miss;
     }, function(e){ st.classList.add("err"); st.textContent = "รวมใบเบิกไม่สำเร็จ: " + e.message; }).then(function(){ b.disabled = false; });
   });
