@@ -492,6 +492,10 @@ details.edit .fields{margin-top:6px}
           </div>
           <p class="status" id="status" role="status"></p>
           <button type="button" class="primary" id="btnAdd">สร้างกองเสา</button>
+          <div class="row-actions" id="placeBar" hidden>
+            <button type="button" class="primary" id="btnPlaceOk">วางตรงนี้</button>
+            <button type="button" id="btnPlaceCancel">ยกเลิก</button>
+          </div>
         </div>
         <hr>
         <label class="check" for="inSettle"><input type="checkbox" id="inSettle"><span>เมื่อเบิกเสาออก ให้เสาที่อยู่ข้างบนเลื่อนลงมาแทนที่ (ตั้งค่าเฉพาะเครื่องนี้)</span></label>
@@ -688,6 +692,7 @@ details.edit .fields{margin-top:6px}
         admin();
         if (db.piles.some(function(p){ return p.name === req.name; })) fail("มีกองชื่อ " + req.name + " อยู่แล้ว");
         db.piles.push({ name: req.name, mat: req.mat, rows: req.rows, removed: [] });
+        (req.positions || []).forEach(function(q){ db.piles.forEach(function(p){ if (p.name === q.name) p.pos = { x: Number(q.x), z: Number(q.z) }; }); });
       } else if (a === "deletePile") {
         admin();
         db.piles = db.piles.filter(function(p){ return p.name !== req.name; });
@@ -1085,8 +1090,14 @@ details.edit .fields{margin-top:6px}
   function frame(run){
     if (!three) return;
     var b = run ? { cx: run.px, cz: run.pz, w: run.width, d: run.len, h: run.height } : three.box;
+    if (!run && placing) {                                               // keep the see-through new pile in view too
+      var gh = placing.ghost, B = three.box.w ? three.box : { cx: gh.px, cz: gh.pz, w: 0, d: 0, h: 0 };
+      var x0 = Math.min(B.cx - B.w / 2, gh.px - gh.width / 2), x1 = Math.max(B.cx + B.w / 2, gh.px + gh.width / 2);
+      var z0 = Math.min(B.cz - B.d / 2, gh.pz - gh.len / 2), z1 = Math.max(B.cz + B.d / 2, gh.pz + gh.len / 2);
+      b = { cx: (x0 + x1) / 2, cz: (z0 + z1) / 2, w: x1 - x0, d: z1 - z0, h: Math.max(B.h, gh.height) };
+    }
     if (!b.w) { three.camera.position.set(0, 3, 12); if (three.controls) { three.controls.target.set(0, 1, 0); three.controls.update(); } return; }
-    if (moving) {                                                        // moving piles: look down at the yard from a corner
+    if (moving || placing) {                                             // moving or placing piles: look down at the yard from a corner
       var d = Math.max(11, b.w * 0.9 + b.d * 0.55);
       three.camera.position.set(b.cx + d * 0.42, d * 0.55, b.cz + b.d / 2 + d * 0.6);
       if (three.controls) { three.controls.target.set(b.cx, b.h / 2, b.cz); three.controls.update(); }
@@ -1387,13 +1398,14 @@ details.edit .fields{margin-top:6px}
 
   function renderW(){
     var box = $("pan-w"); box.textContent = "";
-    $("mode").style.display = moving || (wz && wz.pile) ? "block" : "none";
+    $("mode").style.display = moving || placing || (wz && wz.pile) ? "block" : "none";
     if (moving) $("modeText").textContent = "โหมดย้ายกอง ลากกองเสาไปวางตำแหน่งใหม่";
+    if (placing) $("modeText").textContent = "วางกองใหม่: ลากกองสีส้มโปร่งใสไปวาง แล้วกด วางตรงนี้";
     if (!loaded) { box.appendChild(el("p", "empty", "กำลังโหลดข้อมูล")); return; }
 
     if (!wz) {                                   // start screen
       var go = el("button", "primary big", "เบิกเสา"); go.type = "button";
-      go.addEventListener("click", function(){ if (!$("mergeBox").hidden) closeMerge(""); if (moving) { toast("กำลังย้ายกองอยู่ บันทึกหรือยกเลิกในแท็บ ผู้ดูแล ก่อน"); return; } wz = { pile: "", key: "", sel: new Set(), booking: "", contractor: "", kind: "wbs", cause: "", place: "", note: "", order: "" }; renderW(); });
+      go.addEventListener("click", function(){ if (placing) { toast("กำลังวางกองใหม่อยู่ กด วางตรงนี้ หรือ ยกเลิก ในแท็บ ผู้ดูแล ก่อน"); return; } if (!$("mergeBox").hidden) closeMerge(""); if (moving) { toast("กำลังย้ายกองอยู่ บันทึกหรือยกเลิกในแท็บ ผู้ดูแล ก่อน"); return; } wz = { pile: "", key: "", sel: new Set(), booking: "", contractor: "", kind: "wbs", cause: "", place: "", note: "", order: "" }; renderW(); });
       box.appendChild(go);
       box.appendChild(searchCard());
       state.log.filter(canSelfUndo).reverse().forEach(function(e){
@@ -2573,12 +2585,90 @@ details.edit .fields{margin-top:6px}
     if (parsed.rows.some(function(r){ return r.length > 30; })) { setStatus("ชั้นหนึ่งมีเกิน 30 ต้น ลองขึ้นบรรทัดใหม่เพื่อแบ่งชั้น", true); return; }
     var mat = $("inType").value;
     var name = $("inName").value.trim() || ("เสา " + lenOf(types[mat]) + " ม.");
-    setStatus("กำลังบันทึก");
-    request({ action: "addPile", admin: $("inAdmin").value, name: name, mat: mat, rows: parsed.rows }, true).then(function(){
-      $("inNums").value = ""; $("inName").value = "";
-      setStatus("สร้างกอง " + name + " แล้ว " + n + " ต้น" + (parsed.dup ? " (ตัดเลขซ้ำออก " + parsed.dup + " รายการ)" : ""));
-    }, function(e){ setStatus(e.message, true); });
+    if (runs.some(function(r){ return r.name === name; })) { setStatus("มีกองชื่อ " + name + " อยู่แล้ว ตั้งชื่อใหม่", true); return; }
+    var job = { name: name, mat: mat, rows: parsed.rows, n: n, dup: parsed.dup };
+    if (three && !document.querySelector(".app").classList.contains("no3d") && !moving) startPlace(job);   // put it down by hand first
+    else savePile(job, null);
   });
+  function savePile(job, positions){
+    setStatus("กำลังบันทึก");
+    var req = { action: "addPile", admin: $("inAdmin").value, name: job.name, mat: job.mat, rows: job.rows };
+    if (positions) req.positions = positions;
+    return request(req, true).then(function(){
+      $("inNums").value = ""; $("inName").value = "";
+      setStatus("สร้างกอง " + job.name + " แล้ว " + job.n + " ต้น" + (job.dup ? " (ตัดเลขซ้ำออก " + job.dup + " รายการ)" : ""));
+      return true;
+    }, function(e){ setStatus(e.message, true); return false; });
+  }
+
+  /* ---------- admin: place a new pile by hand: a see-through pile to drag, then put it down ---------- */
+  var placing = null;                               // { job, ghost: {group, mesh, width, len, height, px, pz}, drag }
+  function startPlace(job){
+    var len = lenOf(types[job.mat]), S = section(len), pitchX = S + 0.08, pitchY = S + BAT;
+    var cols = job.rows.reduce(function(m, r){ return Math.max(m, r.length); }, 1);
+    var g = { width: cols * pitchX, len: len, height: job.rows.length * pitchY };
+    var maxLen = runs.reduce(function(m, r){ return Math.max(m, r.len); }, len);
+    var right = runs.reduce(function(m, r){ return Math.max(m, r.px + r.width / 2); }, -GAP);
+    g.px = right + GAP + g.width / 2; g.pz = (maxLen - len) / 2;    // start just right of the yard, butt ends in line
+    var group = new THREE.Group();
+    var mat = new THREE.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.45, depthWrite: false });
+    var mesh = new THREE.Mesh(new THREE.BoxGeometry(g.width, g.height, len), mat);
+    mesh.position.y = g.height / 2;
+    var edges = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0xd9580b }));
+    edges.position.copy(mesh.position);
+    group.add(mesh); group.add(edges);
+    group.position.set(g.px, 0, g.pz);
+    three.scene.add(group);
+    g.group = group; g.mesh = mesh;
+    placing = { job: job, ghost: g, drag: null };
+    wz = null; frame(null); paint();
+    placeUi(true);
+  }
+  function endPlace(){
+    if (!placing) return;
+    three.scene.remove(placing.ghost.group);
+    placing.ghost.mesh.geometry.dispose(); placing.ghost.mesh.material.dispose();
+    placing = null; if (three.controls) three.controls.enabled = true;
+    placeUi(false); frame(null);
+  }
+  function placeUi(on){
+    $("placeBar").hidden = !on; $("btnAdd").hidden = on;
+    $("mode").style.display = on ? "block" : (moving || (wz && wz.pile) ? "block" : "none");
+    if (on) $("modeText").textContent = "วางกองใหม่: ลากกองสีส้มโปร่งใสไปวาง แล้วกด วางตรงนี้";
+    if (on) setStatus("ลากกองสีส้มโปร่งใสในภาพ 3D ไปวางตรงที่ต้องการ (ดูดชิดกองข้างเคียงให้เอง) แล้วกด วางตรงนี้");
+  }
+  $("btnPlaceOk").addEventListener("click", function(){
+    if (!placing) return;
+    var g = placing.ghost, job = placing.job;
+    // pin every pile where it stands now, plus the new one where it was put down
+    var positions = runs.map(function(r){ return { name: r.name, x: r.px, z: r.pz }; }).concat([{ name: job.name, x: g.px, z: g.pz }]);
+    $("btnPlaceOk").disabled = true;
+    savePile(job, positions).then(function(ok){ $("btnPlaceOk").disabled = false; if (ok) endPlace(); });
+  });
+  $("btnPlaceCancel").addEventListener("click", function(){ endPlace(); setStatus("ยกเลิกการวางกอง เลขเสายังอยู่ในช่อง กดสร้างกองเสาใหม่ได้"); });
+  function ghostHit(ev){
+    var r = three.renderer.domElement.getBoundingClientRect();
+    three.ptr.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+    three.ray.setFromCamera(three.ptr, three.camera);
+    return three.ray.intersectObject(placing.ghost.mesh).length > 0;
+  }
+  function bindPlace(){
+    stage.addEventListener("pointerdown", function(ev){
+      if (!placing || ev.target !== three.renderer.domElement || !ghostHit(ev)) return;   // elsewhere: the camera turns as usual
+      var gp = groundPoint(ev); if (!gp) return;
+      ev.stopPropagation(); ev.preventDefault();
+      placing.drag = { dx: placing.ghost.px - gp.x, dz: placing.ghost.pz - gp.z };
+    }, true);
+    window.addEventListener("pointermove", function(ev){
+      if (!placing || !placing.drag) return;
+      var gp = groundPoint(ev); if (!gp) return;
+      var g = placing.ghost, s = snapPile(g, gp.x + placing.drag.dx, gp.z + placing.drag.dz, runs);
+      g.px = s.x; g.pz = s.z; g.group.position.set(s.x, 0, s.z);
+    });
+    function drop(){ if (placing) placing.drag = null; }
+    window.addEventListener("pointerup", drop);
+    window.addEventListener("pointercancel", drop);
+  }
   /* ---------- read pole numbers from a photo (Gemini, through the sheet script) ---------- */
   function shrink(file, maxSide, quality){
     function b64(blob){ return new Promise(function(res, rej){ var fr = new FileReader(); fr.onload = function(){ res({ mime: blob.type || "image/jpeg", data: String(fr.result).split(",")[1] }); }; fr.onerror = rej; fr.readAsDataURL(blob); }); }
@@ -2634,6 +2724,7 @@ details.edit .fields{margin-top:6px}
     var code = $("inAdmin").value;
     if (!code) { moveUi("ใส่รหัสผู้ดูแลก่อนย้ายกอง", true); return; }
     if (!three) { moveUi("อุปกรณ์นี้เปิดภาพ 3D ไม่ได้ จึงย้ายกองไม่ได้", true); return; }
+    if (placing) { moveUi("กำลังวางกองใหม่อยู่ กด วางตรงนี้ หรือ ยกเลิก ก่อน", true); return; }
     request({ action: "checkAdmin", admin: code }, true).then(function(){
       wz = null; moving = true; moved = {}; frame(null); paint();
       moveUi("ลากกองเสาในภาพ 3D ไปวางตำแหน่งใหม่ กองจะดูดเข้าชิดกองข้างเคียงเมื่อเข้าใกล้ แล้วกดบันทึกตำแหน่ง");
@@ -3076,7 +3167,7 @@ details.edit .fields{margin-top:6px}
   setConn(); fillTypes(); renderW(); renderHistory(); renderAdmin();
   if (three) {
     three.box = { cx: 0, cz: 0, w: 0, d: 9, h: 0 };
-    applySceneTheme(); bindPointer(); bindMove(); resize(); frame(null);
+    applySceneTheme(); bindPointer(); bindMove(); bindPlace(); resize(); frame(null);
     if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
     window.addEventListener("resize", resize);
     if (window.matchMedia) {
