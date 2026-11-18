@@ -105,6 +105,16 @@ button:disabled{opacity:.5;cursor:default}
 .card.entry.sent{border-left:4px solid #2e7d32}
 .sentbox{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 button.sendbtn{border-color:#2e7d32;color:#2e7d32;font-weight:600}
+.findcard{gap:8px}
+.findlab{font-weight:600;font-size:14px}
+.findcard input[type=search]{font-size:18px;padding:10px 12px}
+.findres{display:flex;flex-direction:column;gap:8px}
+.findrow{border:1px solid var(--line);border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:4px}
+.findrow.gone{opacity:.8;background:var(--bg)}
+.findtop{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.findno{font-family:var(--font-display);font-size:20px}
+.findpile{font-weight:600;min-width:0;overflow-wrap:anywhere}
+.findrow .pill{align-self:flex-start;white-space:normal}
 .pill.ok{border-color:#2e7d32;color:#2e7d32;font-weight:600}
 .form-row{display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
 .form-row .form-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -1145,7 +1155,9 @@ details.edit .fields{margin-top:6px}
     if (!$("pan-d").hidden) { var last = state.log.length ? state.log[state.log.length - 1].id + state.log.length : ""; if (last !== dashSeen) loadDash(); else renderDash(); }
     if (!$("mergeBox").hidden) { mergeSel.forEach(function(n){ if (!runOf(n)) mergeSel.delete(n); }); renderMerge(); paintMerge(); }
     // do not redraw the form under someone's fingers; just tick off what changed
-    if (wz && wz.pile && !rebuilt && !justSaved) { syncChips(); updateCount(); } else renderW();
+    if (wz && wz.pile && !rebuilt && !justSaved) { syncChips(); updateCount(); }
+    else if (!wz && document.activeElement === findInput) renderFind();     // someone is typing a pole number: just refresh the answers
+    else renderW();
     justSaved = false;
   }
   var justSaved = false;
@@ -1189,6 +1201,110 @@ details.edit .fields{margin-top:6px}
       }
       clearTimeout(timer); armed = false; btn.textContent = label; fn();
     });
+  }
+
+  /* ---------- find a pole by its number ---------- */
+  // Answers come straight from the pile data (works with the 3D view hidden too): which pile, which layer and place,
+  // still there or withdrawn (when, by whom, for which WBS).
+  var findQ = "", findInput = null, findBox = null;
+  function findPoles(q){
+    q = String(q || "").replace(/\s+/g, "");
+    if (!q) return [];
+    var out = [];
+    state.piles.forEach(function(d){
+      var gone = new Set(d.removed);
+      d.rows.forEach(function(row, li){
+        row.forEach(function(label, ci){
+          if (!label) return;
+          var at = label === q ? 0 : label.indexOf(q) === 0 ? 1 : label.indexOf(q) > 0 ? 2 : -1;
+          if (at >= 0) out.push({ label: label, pile: d.name, mat: d.mat, layer: li + 1, layers: d.rows.length, col: ci + 1, gone: gone.has(label), rank: at });
+        });
+      });
+    });
+    return out.sort(function(a, b){ return a.rank - b.rank || a.label.length - b.label.length || (a.label < b.label ? -1 : 1); });
+  }
+  function searchCard(){
+    if (!findBox) {
+      findBox = el("section", "card findcard");
+      var lab = el("label", "findlab"); lab.htmlFor = "findPole"; lab.textContent = "ค้นหาเลขเสา";
+      findInput = document.createElement("input");
+      findInput.type = "search"; findInput.id = "findPole"; findInput.setAttribute("inputmode", "numeric"); findInput.autocomplete = "off";
+      findInput.placeholder = "พิมพ์เลขเสา เช่น 2447";
+      findInput.addEventListener("input", function(){ findQ = findInput.value; renderFind(); });
+      findBox.appendChild(lab); findBox.appendChild(findInput);
+      findBox.appendChild(el("div", "findres"));
+    }
+    findInput.value = findQ;
+    renderFind();
+    return findBox;
+  }
+  function renderFind(){
+    if (!findBox) return;
+    var box = findBox.querySelector(".findres"); box.textContent = "";
+    var q = findQ.replace(/\s+/g, "");
+    if (!q) return;
+    var hits = findPoles(q), exact = hits.filter(function(h){ return h.rank === 0; });
+    if (!exact.length && q.length < 2) { box.appendChild(el("p", "note", "พิมพ์อย่างน้อย 2 ตัว")); return; }
+    if (!hits.length) { box.appendChild(el("p", "note", "ไม่พบเสาเลข " + q + " ในกองไหนเลย")); return; }
+    var show = hits.slice(0, 12);
+    if (hits.length > show.length) box.appendChild(el("p", "note", "พบ " + hits.length + " ต้น แสดง 12 ต้นแรก พิมพ์เลขให้ครบเพื่อแคบลง"));
+    show.forEach(function(h){
+      var r = el("div", "findrow" + (h.gone ? " gone" : "")), top = el("div", "findtop");
+      top.appendChild(el("b", "findno", h.label));
+      top.appendChild(el("span", "findpile", h.pile));
+      top.appendChild(el("span", "pill type", typeDesc(h.mat)));
+      r.appendChild(top);
+      var now = !h.gone && poleOf(h);              // poles above a withdrawn one may have slid down: say where it is now
+      if (now && now.level != null) h.layer = now.level + 1;
+      r.appendChild(el("div", "note", (h.gone ? "เคยอยู่ชั้นที่ " : "ชั้นที่ ") + h.layer + " จากล่าง (มี " + h.layers + " ชั้น) · ต้นที่ " + h.col + " จากซ้าย มองจากหัวเสา"));
+      if (h.gone) {
+        var e = state.log.filter(function(x){ return x.pile === h.pile && x.labels.indexOf(h.label) >= 0; }).pop();
+        r.appendChild(el("span", "pill", "เบิกแล้ว" + (e ? " · " + stamp(e.ts) + " · " + (e.wbs || "เหตุฉุกเฉิน") + " · " + (e.user || "-") : "")));
+      } else r.appendChild(el("span", "pill ok", "ยังอยู่ในกอง"));
+      var a = el("div", "row-actions");
+      if (three) {
+        var look = el("button", "small", "ดูในภาพ 3D"); look.type = "button";
+        look.addEventListener("click", function(){ showPole(h); });
+        a.appendChild(look);
+      }
+      if (!h.gone) {
+        var go = el("button", "small primary", "เบิกต้นนี้"); go.type = "button";
+        go.addEventListener("click", function(){ startWithPole(h); });
+        a.appendChild(go);
+      }
+      r.appendChild(a);
+      box.appendChild(r);
+    });
+  }
+  function poleOf(h){ var run = runOf(h.pile); return run ? run.poles.filter(function(p){ return p.label === h.label; })[0] || null : null; }
+  // turn the camera to the pile and light the pole up for a few seconds
+  var flashTimer = null;
+  function showPole(h){
+    var run = runOf(h.pile), p = poleOf(h);
+    if (!run) return;
+    if (document.querySelector(".app").classList.contains("no3d")) set3d(true);
+    frameFace(run);
+    if (p) {
+      setHot(p); clearTimeout(flashTimer);
+      flashTimer = setTimeout(function(){ if (hot === p) setHot(null); }, 6000);
+    }
+    $("stage").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+    toast("เสา " + h.label + " อยู่กอง " + h.pile + " ชั้นที่ " + h.layer + " ต้นที่ " + h.col + " จากซ้าย");
+  }
+  // start a withdrawal from that pile with the pole picked as soon as the job (WBS or emergency) is chosen
+  function startWithPole(h){
+    if (moving) { toast("กำลังย้ายกองอยู่ บันทึกหรือยกเลิกในแท็บ ผู้ดูแล ก่อน"); return; }
+    if (!$("mergeBox").hidden) closeMerge("");
+    wz = { pile: "", key: "", sel: new Set(), booking: "", contractor: "", kind: "wbs", cause: "", place: "", note: "", order: "", pre: h.label };
+    choosePile(h.pile);
+    var p = poleOf(h); if (p) setHot(p);
+    toast("เลือก WBS หรือเหตุฉุกเฉินก่อน แล้วเสา " + h.label + " จะถูกเลือกให้เอง");
+  }
+  function applyPre(){
+    if (!wz || !wz.pre || !wz.pile) return;
+    var run = runOf(wz.pile), line = lineOf(wz.key), emg = wz.kind === "emergency";
+    if (!run || run.gone.has(wz.pre)) { wz.pre = null; return; }
+    if (emg || (line && line.left > 0 && line.mat === run.mat)) { wz.sel.add(wz.pre); wz.pre = null; }
   }
 
   /* ---------- withdraw: เบิก > กอง > WBS > เสา > บันทึก ---------- */
@@ -1278,6 +1394,7 @@ details.edit .fields{margin-top:6px}
       var go = el("button", "primary big", "เบิกเสา"); go.type = "button";
       go.addEventListener("click", function(){ if (!$("mergeBox").hidden) closeMerge(""); if (moving) { toast("กำลังย้ายกองอยู่ บันทึกหรือยกเลิกในแท็บ ผู้ดูแล ก่อน"); return; } wz = { pile: "", key: "", sel: new Set(), booking: "", contractor: "", kind: "wbs", cause: "", place: "", note: "", order: "" }; renderW(); });
       box.appendChild(go);
+      box.appendChild(searchCard());
       state.log.filter(canSelfUndo).reverse().forEach(function(e){
         var c = el("section", "card active"), hd = el("div", "card-head");
         hd.appendChild(el("h2", null, "คุณเพิ่งเบิก " + e.labels.length + " ต้น"));
@@ -1335,7 +1452,7 @@ details.edit .fields{margin-top:6px}
       var b = el("button", "segb"); b.type = "button"; b.setAttribute("role", "radio");
       b.setAttribute("aria-checked", wz.kind === o[0] ? "true" : "false");
       b.appendChild(el("b", null, o[1])); b.appendChild(el("span", null, o[2]));
-      b.addEventListener("click", function(){ if (wz.kind === o[0]) return; wz.kind = o[0]; wz.sel.clear(); paint(); renderW(); });
+      b.addEventListener("click", function(){ if (wz.kind === o[0]) return; wz.kind = o[0]; wz.sel.clear(); applyPre(); paint(); renderW(); });
       seg.appendChild(b);
     });
     card.appendChild(seg);
@@ -1375,7 +1492,7 @@ details.edit .fields{margin-top:6px}
         sel.addEventListener("change", function(){
           wz.key = sel.value; wz.sel.clear();
           var l = lineOf(wz.key); wz.booking = l ? l.booking : ""; wz.contractor = l ? l.contractor : "";
-          paint(); renderW();
+          applyPre(); paint(); renderW();
         });
         card.appendChild(sel);
       }
