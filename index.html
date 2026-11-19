@@ -126,6 +126,7 @@ button.sendbtn{border-color:#2e7d32;color:#2e7d32;font-weight:600}
 .findno{font-family:var(--font-display);font-size:20px}
 .findpile{font-weight:600;min-width:0;overflow-wrap:anywhere}
 .findrow .pill{align-self:flex-start;white-space:normal}
+.seg2{display:flex;gap:14px;flex-wrap:wrap}
 .pill.ok{border-color:#2e7d32;color:#2e7d32;font-weight:600}
 .form-row{display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
 .form-row .form-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -473,8 +474,18 @@ details.edit .fields{margin-top:6px}
         </div>
         <div class="card" id="mergeBox" hidden>
           <h2>รวมกองเสา</h2>
-          <p class="note">เลือกกองเสาชนิดเดียวกันตั้งแต่ 2 กอง แต่ละกองคงการเรียงเดิม แล้วต่อกันจากซ้ายไปขวาตามตำแหน่งในลานตอนนี้ ประวัติการเบิกของกองเดิมจะย้ายมาอยู่กองใหม่</p>
+          <p class="note">รวมได้เฉพาะเสาชนิดเดียวกัน เลขเสาในแต่ละกองเรียงเหมือนเดิม ประวัติการเบิกของกองเดิมจะย้ายมาอยู่กองใหม่</p>
+          <div class="seg2" role="radiogroup" aria-label="วิธีรวม">
+            <label class="check"><input type="radio" name="mergeMode" value="side" checked><span>ต่อข้าง (ซ้ายไปขวา)</span></label>
+            <label class="check"><input type="radio" name="mergeMode" value="stack"><span>ซ้อนบนล่าง</span></label>
+          </div>
+          <div class="fields" id="mergeAlignRow" hidden>
+            <label for="mergeAlign">กองที่แคบกว่าวาง</label>
+            <select id="mergeAlign"><option value="center">กึ่งกลาง</option><option value="left">ชิดซ้าย</option><option value="right">ชิดขวา</option></select>
+          </div>
+          <p class="note" id="mergeHint"></p>
           <div id="mergeList" class="col"></div>
+          <p class="status" id="mergePreview"></p>
           <div class="fields"><label for="mergeName">ชื่อกองใหม่</label><input type="text" id="mergeName" maxlength="40" placeholder="เช่น เสา 12 ม. กองหมอนป่าซาง"></div>
           <p class="status" id="mergeStatus" role="status"></p>
           <div class="row-actions">
@@ -726,11 +737,20 @@ details.edit .fields{margin-top:6px}
         if (names.indexOf(name) < 0 && db.piles.some(function(p){ return p.name === name; })) fail("มีกองชื่อ " + name + " อยู่แล้ว");
         if (picked.some(function(p){ return p.mat !== picked[0].mat; })) fail("รวมได้เฉพาะกองที่เป็นเสาชนิดเดียวกัน");
         var h = picked.reduce(function(m, p){ return Math.max(m, p.rows.length); }, 0), rows = [];
+        if (req.mode === "stack") {                // bottom pile first; each one's layers go on top, columns lined up
+          var widest = picked.reduce(function(m, p){ return Math.max(m, p.rows.reduce(function(n, r){ return Math.max(n, r.length); }, 0)); }, 0);
+          picked.forEach(function(p){
+            var w = p.rows.reduce(function(m, r){ return Math.max(m, r.length); }, 0);
+            var shift = req.align === "left" ? 0 : req.align === "right" ? widest - w : Math.floor((widest - w) / 2);
+            p.rows.forEach(function(r){ var out = []; for (var c = 0; c < shift; c++) out.push(""); rows.push(out.concat(r)); });
+          });
+        } else {
         for (var k = 0; k < h; k++) rows.push([]);
         picked.forEach(function(p){
           var w = p.rows.reduce(function(m, r){ return Math.max(m, r.length); }, 0);
           rows.forEach(function(r, k){ var src = p.rows[k] || []; for (var c = 0; c < w; c++) r.push(src[c] || ""); });
         });
+        }
         rows.forEach(function(r){ while (r.length && !r[r.length - 1]) r.pop(); });
         var labels = [].concat.apply([], rows).filter(Boolean);
         if (new Set(labels).size !== labels.length) fail("มีเลขเสาซ้ำกันระหว่างกองที่เลือก");
@@ -2855,7 +2875,35 @@ details.edit .fields{margin-top:6px}
 
   /* ---------- admin: merge piles ---------- */
   var mergeSel = new Set();
-  function mergeOrder(){ return runs.filter(function(r){ return mergeSel.has(r.name); }).sort(function(a, b){ return a.px - b.px; }); }
+  function mergeMode(){ var r = document.querySelector('input[name="mergeMode"]:checked'); return r ? r.value : "side"; }
+  // side by side: left to right as they stand in the yard; stacked: in the order they were ticked, bottom first
+  function mergeOrder(){
+    if (mergeMode() === "stack") return Array.from(mergeSel).map(runOf).filter(Boolean);
+    return runs.filter(function(r){ return mergeSel.has(r.name); }).sort(function(a, b){ return a.px - b.px; });
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('input[name="mergeMode"]'), function(r){ r.addEventListener("change", function(){ renderMerge(); paintMerge(); }); });
+  $("mergeAlign").addEventListener("change", function(){ renderMerge(); });
+  // stacked: where the merged pile sits and how big it is (columns shifted per the alignment, layers added up)
+  function stackShape(order){
+    var widest = order.reduce(function(m, r){ return Math.max(m, r.cols); }, 0), align = $("mergeAlign").value, b = order[0];
+    var shift = function(r){ return align === "left" ? 0 : align === "right" ? widest - r.cols : Math.floor((widest - r.cols) / 2); };
+    var layers = order.reduce(function(m, r){ return m + r.rows.length; }, 0);
+    var left = b.px - b.width / 2 - shift(b) * b.pitchX;               // the bottom pile stays where it is
+    return { cols: widest, layers: layers, x: left + widest * b.pitchX / 2, z: b.pz, w: widest * b.pitchX, h: layers * b.pitchY, len: b.len };
+  }
+  var mergeGhost = null;
+  function dropMergeGhost(){ if (mergeGhost && three) { three.scene.remove(mergeGhost); mergeGhost.children.forEach(function(c){ c.geometry.dispose(); c.material.dispose(); }); } mergeGhost = null; }
+  function showMergeGhost(sh){
+    dropMergeGhost();
+    if (!three || !sh) return;
+    var g = new THREE.Group();
+    var mesh = new THREE.Mesh(new THREE.BoxGeometry(sh.w, sh.h, sh.len), new THREE.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.25, depthWrite: false }));
+    mesh.position.y = sh.h / 2;
+    var edges = new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry), new THREE.LineBasicMaterial({ color: 0xd9580b }));
+    edges.position.copy(mesh.position);
+    g.add(mesh); g.add(edges); g.position.set(sh.x, 0, sh.z);
+    three.scene.add(g); mergeGhost = g;
+  }
   function renderMerge(){
     var box = $("mergeList"); box.textContent = "";
     var first = mergeOrder()[0], order = mergeOrder().map(function(r){ return r.name; });
@@ -2866,17 +2914,29 @@ details.edit .fields{margin-top:6px}
       cb.disabled = !!first && run.mat !== first.mat;
       var n = order.indexOf(run.name);
       lab.appendChild(cb);
-      lab.appendChild(el("span", null, (n >= 0 ? (n + 1) + ". " : "") + run.name + " · " + typeDesc(run.mat) + " · " + leftIn(run) + "/" + run.poles.length + " ต้น"));
+      var stack = mergeMode() === "stack", tag = n < 0 ? "" : stack ? (n === 0 ? "ล่างสุด · " : n === order.length - 1 ? "บนสุด · " : "ชั้นที่ " + (n + 1) + " · ") : (n + 1) + ". ";
+      lab.appendChild(el("span", null, tag + run.name + " · " + typeDesc(run.mat) + " · " + run.rows.length + " ชั้น × " + run.cols + " ต้น · " + leftIn(run) + "/" + run.poles.length + " ต้น"));
       cb.addEventListener("change", function(){ if (cb.checked) mergeSel.add(run.name); else mergeSel.delete(run.name); renderMerge(); paintMerge(); });
       box.appendChild(lab);
     });
+    var stackOn = mergeMode() === "stack";
+    $("mergeAlignRow").hidden = !stackOn;
+    $("mergeHint").textContent = stackOn
+      ? "ติ๊กกองจากล่างขึ้นบน กองแรกที่ติ๊กอยู่ล่างสุดและอยู่ตำแหน่งเดิม ถ้าจะสลับลำดับ เอาติ๊กออกแล้วติ๊กใหม่"
+      : "เลือกกองเสาชนิดเดียวกันตั้งแต่ 2 กอง แต่ละกองคงการเรียงเดิม แล้วต่อกันจากซ้ายไปขวาตามตำแหน่งในลานตอนนี้";
+    var ord = mergeOrder(), pv = $("mergePreview");
+    if (stackOn && ord.length >= 2) {
+      var sh = stackShape(ord), total = ord.reduce(function(m, r){ return m + r.poles.length; }, 0);
+      pv.textContent = "ตัวอย่างผลลัพธ์ (กรอบส้มโปร่งใสในภาพ 3D): " + sh.layers + " ชั้น · กว้างสุด " + sh.cols + " ต้น · รวม " + total + " ต้น";
+      showMergeGhost(sh);
+    } else { pv.textContent = ""; dropMergeGhost(); }
     $("btnMergeOk").disabled = mergeSel.size < 2;
   }
   function paintMerge(){
     poles.forEach(function(p){ if (p.mats[0]) p.mats[0].color.setHex(!mergeSel.size ? COL_NORMAL : mergeSel.has(p.run.name) ? COL_SEL : COL_DIM); });
   }
   function closeMerge(text, err){
-    $("mergeBox").hidden = true; $("btnMerge").hidden = false; mergeSel.clear(); paint();
+    $("mergeBox").hidden = true; $("btnMerge").hidden = false; mergeSel.clear(); dropMergeGhost(); paint();
     var st = $("moveStatus"); st.textContent = text || ""; st.classList.toggle("err", !!err);
   }
   $("btnMerge").addEventListener("click", function(){
@@ -2884,6 +2944,7 @@ details.edit .fields{margin-top:6px}
     if (!$("inAdmin").value) { $("moveStatus").textContent = "ใส่รหัสผู้ดูแลก่อนรวมกอง"; $("moveStatus").classList.add("err"); return; }
     wz = null; renderW();
     mergeSel.clear(); $("mergeName").value = ""; $("mergeStatus").textContent = "";
+    document.querySelector('input[name="mergeMode"][value="side"]').checked = true; $("mergeAlign").value = "center";
     $("mergeBox").hidden = false; $("btnMerge").hidden = true; $("moveStatus").textContent = "";
     renderMerge(); paintMerge(); frame(null);
   });
@@ -2893,16 +2954,20 @@ details.edit .fields{margin-top:6px}
     function err(t){ st.textContent = t; st.classList.add("err"); }
     if (order.length < 2) { err("เลือกกองที่จะรวมอย่างน้อย 2 กอง"); return; }
     if (!name) { err("ตั้งชื่อกองใหม่ก่อน"); $("mergeName").focus(); return; }
-    // keep the merged pile where the left-most pile stood, if the admin had placed any of them
-    var pos = null, a = order[0];
+    // keep the merged pile where the left-most (side by side) or the bottom (stacked) pile stood, if the admin had placed any of them
+    var pos = null, a = order[0], stack = mergeMode() === "stack";
     if (order.some(function(r){ var d = state.piles.filter(function(p){ return p.name === r.name; })[0]; return d && d.pos; })) {
-      var cols = order.reduce(function(s, r){ return s + r.cols; }, 0);
-      pos = { x: a.px - a.width / 2 + cols * a.pitchX / 2, z: a.pz };
+      if (stack) { var sh = stackShape(order); pos = { x: sh.x, z: sh.z }; }
+      else {
+        var cols = order.reduce(function(s, r){ return s + r.cols; }, 0);
+        pos = { x: a.px - a.width / 2 + cols * a.pitchX / 2, z: a.pz };
+      }
     }
     st.classList.remove("err"); st.textContent = "กำลังรวมกอง";
     $("btnMergeOk").disabled = true;
     var n = order.reduce(function(s, r){ return s + r.poles.length; }, 0);
-    request({ action: "mergePiles", admin: $("inAdmin").value, names: order.map(function(r){ return r.name; }), name: name, pos: pos }, true).then(function(){
+    request({ action: "mergePiles", admin: $("inAdmin").value, names: order.map(function(r){ return r.name; }), name: name, pos: pos,
+              mode: stack ? "stack" : "side", align: $("mergeAlign").value }, true).then(function(){
       closeMerge("รวม " + order.length + " กองเป็น " + name + " แล้ว " + n + " ต้น"); frame(null);
     }, function(e){ err(e.message); $("btnMergeOk").disabled = false; });
   });
