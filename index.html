@@ -49,6 +49,12 @@ body{background:var(--bg);color:var(--ink);font-family:var(--font-body);font-siz
 .slidebtn{position:absolute;top:50%;transform:translateY(-50%);z-index:2;width:46px;height:46px;border-radius:50%;padding:0;font-size:18px;line-height:1;
   background:rgba(255,255,255,.85);border:1px solid var(--line);box-shadow:0 1px 6px rgba(0,0,0,.2);touch-action:none;user-select:none;-webkit-user-select:none;display:flex;align-items:center;justify-content:center}
 .slidebtn.left{left:10px}.slidebtn.right{right:10px}
+.slidebtn.up,.slidebtn.down{right:10px;transform:none}
+.slidebtn.up{top:calc(50% - 79px)}.slidebtn.down{top:calc(50% + 33px)}
+@media (max-width:760px){
+  .slidebtn{width:40px;height:40px;font-size:16px}
+  .slidebtn.up{top:calc(50% - 68px)}.slidebtn.down{top:calc(50% + 28px)}
+}
 .slidebtn:active{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .slidebtn[hidden]{display:none}
 .viewbtn{position:absolute;right:12px;bottom:10px;z-index:2;background:var(--panel);font-size:13px;font-weight:600;padding:6px 12px;box-shadow:0 1px 4px rgba(0,0,0,.18)}
@@ -343,6 +349,8 @@ details.edit .fields{margin-top:6px}
     <button type="button" class="viewbtn" id="btnView" aria-label="จัดมุมกล้องกลับมาที่หน้ากอง">จัดมุมกล้อง</button>
     <button type="button" class="slidebtn left" id="btnLeft" aria-label="เลื่อนภาพไปทางซ้าย" hidden>◀</button>
     <button type="button" class="slidebtn right" id="btnRight" aria-label="เลื่อนภาพไปทางขวา" hidden>▶</button>
+    <button type="button" class="slidebtn up" id="btnUp" aria-label="เลื่อนภาพขึ้น" hidden>▲</button>
+    <button type="button" class="slidebtn down" id="btnDown" aria-label="เลื่อนภาพลง" hidden>▼</button>
   </div>
   <aside class="panel">
     <div class="head">
@@ -1600,31 +1608,32 @@ details.edit .fields{margin-top:6px}
   $("btnView").addEventListener("click", resetView);
   // ◀ ▶ slide the view sideways (camera and the point it circles move together; clampView keeps it in the yard).
   // A tap moves a quarter of the view; holding keeps sliding until the finger lifts.
-  function slideBy(d){
+  function slideBy(d, up){
     if (!three) return;
-    var v = new THREE.Vector3().setFromMatrixColumn(three.camera.matrixWorld, 0); v.y = 0;
+    var v = up ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3().setFromMatrixColumn(three.camera.matrixWorld, 0);
+    if (!up) v.y = 0;
     if (v.lengthSq() < 1e-6) return;
     v.normalize();
     three.camera.position.addScaledVector(v, d);
     if (three.controls) { three.controls.target.addScaledVector(v, d); three.controls.update(); clampView(); }
   }
-  function viewSpan(){
+  function viewSpan(up){
     if (!three) return 4;
     var t = three.controls ? three.controls.target : new THREE.Vector3();
-    return three.camera.position.distanceTo(t) * Math.tan(three.camera.fov * Math.PI / 360) * (three.camera.aspect || 1);
+    return three.camera.position.distanceTo(t) * Math.tan(three.camera.fov * Math.PI / 360) * (up ? 1 : (three.camera.aspect || 1));
   }
-  function holdSlide(btn, dir){
+  function holdSlide(btn, dir, up){
     var raf = 0, held = false, t0 = 0, last = 0, holdTimer = null, stepLeft = 0;
     function loop(now){
       var dt = Math.min(0.05, (now - last) / 1000); last = now;
-      var span = viewSpan();
-      if (stepLeft > 0) { var d = Math.min(stepLeft, span * 2.2 * dt); slideBy(dir * d); stepLeft -= d; }
-      else if (held) slideBy(dir * span * 0.9 * dt);
+      var span = viewSpan(up);
+      if (stepLeft > 0) { var d = Math.min(stepLeft, span * 2.2 * dt); slideBy(dir * d, up); stepLeft -= d; }
+      else if (held) slideBy(dir * span * 0.9 * dt, up);
       if (held || stepLeft > 0) raf = requestAnimationFrame(loop); else raf = 0;
     }
     function start(ev){
       ev.preventDefault();
-      held = true; stepLeft = viewSpan() * 0.5;                 // one tap = a quarter of what is on screen (span is half the width)
+      held = true; stepLeft = viewSpan(up) * 0.5;               // one tap = a quarter of what is on screen (span is half of it)
       last = performance.now();
       if (!raf) raf = requestAnimationFrame(loop);
       try { btn.setPointerCapture(ev.pointerId); } catch (e) {}
@@ -1634,10 +1643,12 @@ details.edit .fields{margin-top:6px}
     btn.addEventListener("pointerup", stop);
     btn.addEventListener("pointercancel", stop);
     btn.addEventListener("lostpointercapture", stop);
-    btn.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " ") { e.preventDefault(); stepLeft = viewSpan() * 0.5; last = performance.now(); if (!raf) raf = requestAnimationFrame(loop); } });
+    btn.addEventListener("keydown", function(e){ if (e.key === "Enter" || e.key === " ") { e.preventDefault(); stepLeft = viewSpan(up) * 0.5; last = performance.now(); if (!raf) raf = requestAnimationFrame(loop); } });
   }
   holdSlide($("btnLeft"), -1);
   holdSlide($("btnRight"), 1);
+  holdSlide($("btnUp"), 1, true);
+  holdSlide($("btnDown"), -1, true);
   $("btn3d").addEventListener("click", function(){ set3d(document.querySelector(".app").classList.contains("no3d")); });
   // someone is typing in a box inside el: do not redraw it under their fingers
   function typingIn(el0){ var a = document.activeElement; return !!a && el0.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName); }
@@ -3215,7 +3226,7 @@ details.edit .fields{margin-top:6px}
   if (three) {
     three.box = { cx: 0, cz: 0, w: 0, d: 9, h: 0 };
     applySceneTheme(); bindPointer(); bindMove(); bindPlace(); resize(); frame(null);
-    $("btnLeft").hidden = $("btnRight").hidden = false;
+    $("btnLeft").hidden = $("btnRight").hidden = $("btnUp").hidden = $("btnDown").hidden = false;
     if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
     window.addEventListener("resize", resize);
     if (window.matchMedia) {
