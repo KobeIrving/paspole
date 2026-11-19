@@ -136,6 +136,12 @@ button.sendbtn{border-color:#2e7d32;color:#2e7d32;font-weight:600}
 .pein.gone{text-decoration:line-through;color:var(--muted,#888);background:var(--bg)}
 .pein.changed{border-color:var(--accent);background:var(--accent-soft);text-decoration:none;color:var(--ink);font-weight:600}
 .peempty{min-height:30px}
+.peold{font-size:13px;text-align:center;padding:6px 2px;border-radius:6px;background:var(--bg);color:var(--muted,#888);border:1px solid var(--line)}
+.peadd{font:inherit;font-size:18px;line-height:1;padding:4px 2px;border:1.5px dashed var(--accent);border-radius:6px;background:transparent;color:var(--accent);cursor:pointer;min-height:30px}
+@media (hover:hover){.peadd:hover{background:var(--accent-soft)}}
+.poleedit .pgrid-wrap{margin:0;padding-left:0}
+.poleedit .pgl{left:0;padding:0 4px}
+.addnext{max-width:140px;text-align:left;padding:6px 8px}
 .pill.ok{border-color:#2e7d32;color:#2e7d32;font-weight:600}
 .form-row{display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
 .form-row .form-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -748,6 +754,30 @@ details.edit .fields{margin-top:6px}
         rp.rows = rp.rows.map(function(r){ return r.map(function(l){ return l && map[l] != null ? map[l] : l; }); });
         rp.removed = rp.removed.map(function(l){ return map[l] != null ? map[l] : l; });
         db.log.forEach(function(e){ if (e.pile === rp.name) e.labels = e.labels.map(function(l){ return map[l] || l; }); });
+      } else if (a === "addPoles") {
+        admin();
+        var ap = db.piles.filter(function(p){ return p.name === req.pile; })[0];
+        if (!ap) fail("ไม่พบกอง " + req.pile);
+        var adds = (req.poles || []).filter(function(q){ return q && String(q.label || "").trim(); });
+        if (!adds.length) fail("ยังไม่ได้ใส่เลขเสา");
+        var owner = {};
+        db.piles.forEach(function(p){ [].concat.apply([], p.rows).forEach(function(l){ if (l) owner[l] = p.name; }); });
+        adds.forEach(function(q){
+          var l = String(q.label).trim();
+          if (owner[l]) fail(owner[l] === ap.name ? "เลขเสา " + l + " มีอยู่แล้วในกองนี้" : "เลขเสา " + l + " มีอยู่แล้วในกอง " + owner[l]);
+          owner[l] = ap.name;
+        });
+        var sh = Math.max(0, -Math.min.apply(null, adds.map(function(q){ return Number(q.col); })));
+        if (sh) ap.rows = ap.rows.map(function(r){ var x = r.slice(); for (var k = 0; k < sh; k++) x.unshift(""); return x; });
+        if (!ap.rows.length) ap.rows = [[]];
+        adds.forEach(function(q){
+          var c = Number(q.col) + sh, top = -1;
+          ap.rows.forEach(function(r, li){ if (r[c]) top = li; });
+          var li = top < 0 ? 0 : top + 1;
+          while (ap.rows.length <= li) ap.rows.push([]);
+          var row = ap.rows[li]; while (row.length <= c) row.push("");
+          row[c] = String(q.label).trim();
+        });
       } else if (a === "deletePile") {
         admin();
         db.piles = db.piles.filter(function(p){ return p.name !== req.name; });
@@ -848,7 +878,7 @@ details.edit .fields{margin-top:6px}
 
   // every server answer carries the whole state; show it
   var BUSY_TEXT = { withdraw: "กำลังบันทึกการเบิก", undo: "กำลังยกเลิกรายการ", undoPoles: "กำลังยกเลิกเสา", upload: "กำลังอัปข้อมูล WBS",
-    addPile: "กำลังสร้างกองเสา", renamePoles: "กำลังบันทึกเลขเสา", deletePile: "กำลังลบกอง", mergePiles: "กำลังรวมกอง", setPositions: "กำลังบันทึกตำแหน่งกอง",
+    addPile: "กำลังสร้างกองเสา", addPoles: "กำลังเพิ่มเสา", renamePoles: "กำลังบันทึกเลขเสา", deletePile: "กำลังลบกอง", mergePiles: "กำลังรวมกอง", setPositions: "กำลังบันทึกตำแหน่งกอง",
     setOrder: "กำลังบันทึกเลขที่ใบสั่ง", setSent: "กำลังบันทึกสถานะส่งคลัง", addPhoto: "กำลังส่งรูป", uploadForms: "กำลังอัปใบเบิกเปล่า", registerForms: "กำลังบันทึกใบเบิกเปล่า", addSigner: "กำลังเพิ่มลายเซ็น", deleteSigner: "กำลังลบลายเซ็น", listFolderForms: "กำลังดูไฟล์ในโฟลเดอร์ไดรฟ์", deleteForm: "กำลังลบใบเบิกเปล่า", getForm: "กำลังเตรียมใบเบิก", checkAdmin: "กำลังตรวจรหัสผู้ดูแล" };
   // a small spinning pill while something the user pressed is on its way; the 20-second refresh stays silent
   var busyCount = 0;
@@ -2666,13 +2696,139 @@ details.edit .fields{margin-top:6px}
         request({ action: "deletePile", name: run.name, admin: code }).then(function(){ toast("ลบกอง " + run.name + " แล้ว"); }, function(){});
       });
       var ed = el("button", "small", editPile === run.name ? "ปิดการแก้ไข" : "แก้ไขเลขเสา"); ed.type = "button";
-      ed.addEventListener("click", function(){ if (editPile === run.name) { editPile = null; editDraft = {}; } else { editPile = run.name; editDraft = {}; } renderAdmin(); });
+      ed.addEventListener("click", function(){ if (editPile === run.name) { editPile = null; editDraft = {}; } else { editPile = run.name; editDraft = {}; addOpen = null; } renderAdmin(); });
+      var ad = el("button", "small", addOpen === run.name ? "ปิดการเพิ่มเสา" : "เพิ่มเสา"); ad.type = "button";
+      ad.addEventListener("click", function(){ if (addOpen === run.name) addOpen = null; else { addOpen = run.name; addDraft = []; editPile = null; editDraft = {}; } renderAdmin(); });
+      r.appendChild(ad);
       r.appendChild(ed);
       r.appendChild(b); c.appendChild(r);
       if (editPile === run.name) c.appendChild(poleEditor(run));
+      if (addOpen === run.name) c.appendChild(poleAdder(run));
       pilesAdminEl.appendChild(c);
     });
     if (editPile && !runOf(editPile)) { editPile = null; editDraft = {}; }
+    if (addOpen && !runOf(addOpen)) { addOpen = null; addDraft = []; }
+  }
+
+  /* add poles to a pile that already exists: the pile's face as it stands now (withdrawn poles gone, the rest settled),
+     a "+" on top of every column and at both sides; tap a "+" to put the number from the box there */
+  var addOpen = null, addDraft = [], addNext = "";
+  function nextLabel(l){
+    var m = /^(.*?)(\d+)$/.exec(l || "");
+    if (!m) return "";
+    var n = String(Number(m[2]) + 1); while (n.length < m[2].length) n = "0" + n;
+    return m[1] + n;
+  }
+  function labelList(t){
+    var out = [];
+    String(t || "").split(/[\s,]+/).forEach(function(w){
+      if (!w) return;
+      var r = /^(\d+)-(\d+)$/.exec(w);
+      if (r && Number(r[2]) >= Number(r[1]) && Number(r[2]) - Number(r[1]) < 300) {
+        for (var n = Number(r[1]); n <= Number(r[2]); n++) { var v = String(n); while (v.length < r[1].length) v = "0" + v; out.push(v); }
+      } else out.push(w.slice(0, 20));
+    });
+    return out;
+  }
+  function labelOwner(l){
+    var own = null;
+    state.piles.forEach(function(p){ p.rows.forEach(function(r){ if (r.indexOf(l) >= 0) own = p.name; }); });
+    return own;
+  }
+  // column -> poles bottom-up: live poles of the pile (settled), then the new ones in the order they were placed
+  function adderStacks(d){
+    var gone = new Set(d.removed), cols = d.rows.reduce(function(m, r){ return Math.max(m, r.length); }, 0);
+    var lo = 0, hi = cols - 1, st = {};
+    addDraft.forEach(function(q){ lo = Math.min(lo, q.col); hi = Math.max(hi, q.col); });
+    for (var c = lo; c <= hi; c++) st[c] = [];
+    d.rows.forEach(function(r){ r.forEach(function(l, c){ if (l && !gone.has(l)) st[c].push({ label: l }); }); });
+    addDraft.forEach(function(q, i){ st[q.col].push({ label: q.label, draft: i }); });
+    var h = 0; Object.keys(st).forEach(function(c){ h = Math.max(h, st[c].length); });
+    return { st: st, lo: lo, hi: hi, h: h };
+  }
+  function addAt(d, col, label, quiet){
+    label = String(label || "").trim();
+    if (!label) { if (!quiet) toast("ใส่เลขเสาในช่องก่อน แล้วค่อยกด +"); return false; }
+    var own = labelOwner(label);
+    if (own) { toast("เลขเสา " + label + " มีอยู่แล้วในกอง " + own); return false; }
+    if (addDraft.some(function(q){ return q.label === label; })) { toast("ใส่เลข " + label + " ไปแล้ว"); return false; }
+    addDraft.push({ label: label, col: col });
+    return true;
+  }
+  function poleAdder(run){
+    var d = state.piles.filter(function(p){ return p.name === run.name; })[0];
+    var box = el("div", "poleedit");
+    box.appendChild(el("p", "note", "หน้ากองตอนนี้ (มองจากหัวเสา ต้นที่เบิกไปแล้วไม่แสดง) พิมพ์เลขเสาในช่อง แล้วกด + ตรงที่จะวาง เลขในช่องจะเพิ่มทีละ 1 ให้เอง วางบนหัวกองหรือต่อข้างซ้ายขวาได้ กดเสาสีส้มเพื่อเอาออก"));
+    var bar = el("div", "row-actions");
+    var inp = document.createElement("input"); inp.type = "text"; inp.className = "pein addnext"; inp.placeholder = "เลขเสา"; inp.maxLength = 20;
+    inp.value = addNext; inp.autocomplete = "off"; inp.spellcheck = false; inp.setAttribute("aria-label", "เลขเสาที่จะวาง");
+    inp.addEventListener("input", function(){ addNext = inp.value; });
+    bar.appendChild(inp);
+    var auto = el("button", "small", "วางอัตโนมัติ"); auto.type = "button";
+    auto.title = "พิมพ์หลายเลขได้ เช่น 2701 2702 หรือ 2701-2710 แล้วระบบวางลงช่องว่างที่ต่ำที่สุดก่อน";
+    auto.addEventListener("click", function(){
+      var list = labelList(inp.value);
+      if (!list.length) { toast("พิมพ์เลขเสาในช่องก่อน เช่น 2701-2710"); inp.focus(); return; }
+      var put = 0;
+      for (var i = 0; i < list.length; i++) {
+        var a = adderStacks(d), best = null;
+        for (var c = a.lo; c <= a.hi; c++) if (best == null || a.st[c].length < a.st[best].length) best = c;
+        if (best == null) best = 0;
+        if (!addAt(d, best, list[i], true)) break;
+        put++;
+      }
+      if (put === list.length) { addNext = list.length > 1 ? "" : nextLabel(list[0]); }
+      renderAdmin();
+      if (put) toast("วางแล้ว " + put + " ต้น ยังไม่บันทึก");
+    });
+    bar.appendChild(auto);
+    box.appendChild(bar);
+    var a = adderStacks(d), from = a.lo - 1, to = a.hi + 1, n = to - from + 1;
+    var grid = el("div", "pegrid addgrid");
+    grid.style.gridTemplateColumns = "auto repeat(" + n + ", minmax(48px, 1fr))";
+    for (var lv = a.h; lv >= 0; lv--) {
+      grid.appendChild(el("span", "pgl", "ชั้น " + (lv + 1)));
+      for (var c = from; c <= to; c++) {
+        var stack = a.st[c] || [], p = stack[lv];
+        if (p && p.draft == null) { grid.appendChild(el("span", "peold", p.label)); continue; }
+        if (p) {
+          var x = el("button", "pein changed", p.label); x.type = "button"; x.title = "เอาออก";
+          x.setAttribute("aria-label", "เอาเสาเลข " + p.label + " ออก");
+          (function(i){ x.addEventListener("click", function(){ addDraft.splice(i, 1); renderAdmin(); }); })(p.draft);
+          grid.appendChild(x); continue;
+        }
+        if (lv === stack.length) {
+          var plus = el("button", "peadd", "+"); plus.type = "button";
+          plus.setAttribute("aria-label", "วางเสาที่ชั้น " + (lv + 1) + (c < 0 ? " ข้างซ้าย" : c >= (d.rows.reduce(function(m, r){ return Math.max(m, r.length); }, 0)) ? " ข้างขวา" : " ต้นที่ " + (c + 1)));
+          (function(col){ plus.addEventListener("click", function(){
+            var l = inp.value.trim();
+            if (!addAt(d, col, l)) { inp.focus(); return; }
+            addNext = nextLabel(l); renderAdmin();
+            var nx = document.querySelector(".addnext"); if (nx) nx.focus({ preventScroll: true });
+          }); })(c);
+          grid.appendChild(plus); continue;
+        }
+        grid.appendChild(el("span", "peempty"));
+      }
+    }
+    var wrap = el("div", "pgrid-wrap"); wrap.appendChild(grid); box.appendChild(wrap);
+    var st = el("p", "status"), acts = el("div", "row-actions");
+    var save = el("button", "primary small", addDraft.length ? "บันทึก เพิ่ม " + addDraft.length + " ต้น" : "บันทึก"); save.type = "button";
+    save.disabled = !addDraft.length;
+    var clr = el("button", "small", "ล้างที่วาง"); clr.type = "button";
+    clr.addEventListener("click", function(){ addDraft = []; renderAdmin(); });
+    save.addEventListener("click", function(){
+      var code = adminCode(); if (!code) return;
+      var list = addDraft.slice();
+      save.disabled = true; st.classList.remove("err"); st.textContent = "กำลังบันทึก";
+      request({ action: "addPoles", admin: code, pile: run.name, poles: list }, true).then(function(){
+        addDraft = []; addOpen = null; addNext = ""; renderAdmin();
+        toast("เพิ่มเสาเข้ากอง " + run.name + " แล้ว " + list.length + " ต้น");
+      }, function(e){ save.disabled = false; st.classList.add("err"); st.textContent = e.message; });
+    });
+    acts.appendChild(save); acts.appendChild(clr);
+    box.appendChild(acts); box.appendChild(st);
+    return box;
   }
   // fix pole numbers: the pile's face as boxes to type in (top layer first), saved in one go
   var editPile = null, editDraft = {};
