@@ -129,6 +129,7 @@ button.sendbtn{border-color:#2e7d32;color:#2e7d32;font-weight:600}
 .seg2{display:flex;gap:14px;flex-wrap:wrap}
 .pill.batch{font-weight:600}
 .pill.batch.old{background:#efe6d6;border-color:#8a7350;color:#6b5634}
+.pill.batch.broken{background:#ece4dc;border-color:#7a4a3a;color:#6e3426}
 .poleedit{display:flex;flex-direction:column;gap:8px;margin-top:6px}
 .pegrid{display:grid;gap:4px;overflow-x:auto;padding-bottom:4px}
 .pein{font:inherit;font-size:14px;text-align:center;padding:6px 2px;border:1px solid var(--line);border-radius:6px;background:var(--panel);color:var(--ink);min-width:0}
@@ -507,7 +508,7 @@ details.edit .fields{margin-top:6px}
           <h2>เพิ่มกองเสา</h2>
           <div class="fields">
             <label for="inType">ชนิดเสา</label><select id="inType"></select>
-            <label for="inBatch">Batch</label><select id="inBatch"><option value="N">N · เสาใหม่ (New)</option><option value="R">R · นำกลับมาใช้ใหม่ (Re-use)</option></select>
+            <label for="inBatch">Batch</label><select id="inBatch"><option value="N">N · เสาใหม่ (New)</option><option value="R">R · นำกลับมาใช้ใหม่ (Re-use)</option><option value="D">D · ชำรุด</option></select>
             <label for="inName">ชื่อกอง</label><input type="text" id="inName" placeholder="เช่น เสา 9 ม. ลานหลัง" maxlength="40">
             <label for="inPer">ต้นต่อชั้น</label><input type="number" id="inPer" min="1" max="20" step="1" value="6">
           </div>
@@ -726,7 +727,7 @@ details.edit .fields{margin-top:6px}
       } else if (a === "addPile") {
         admin();
         if (db.piles.some(function(p){ return p.name === req.name; })) fail("มีกองชื่อ " + req.name + " อยู่แล้ว");
-        db.piles.push({ name: req.name, mat: req.mat, batch: req.batch === "R" ? "R" : "N", rows: req.rows, removed: [] });
+        db.piles.push({ name: req.name, mat: req.mat, batch: batchOf(req.batch), rows: req.rows, removed: [] });
         (req.positions || []).forEach(function(q){ db.piles.forEach(function(p){ if (p.name === q.name) p.pos = { x: Number(q.x), z: Number(q.z) }; }); });
       } else if (a === "renamePoles") {
         admin();
@@ -764,7 +765,7 @@ details.edit .fields{margin-top:6px}
         var picked = names.map(function(n){ var p = db.piles.filter(function(x){ return x.name === n; })[0]; if (!p) fail("ไม่พบกอง " + n); return p; });
         if (names.indexOf(name) < 0 && db.piles.some(function(p){ return p.name === name; })) fail("มีกองชื่อ " + name + " อยู่แล้ว");
         if (picked.some(function(p){ return p.mat !== picked[0].mat; })) fail("รวมได้เฉพาะกองที่เป็นเสาชนิดเดียวกัน");
-        if (picked.some(function(p){ return (p.batch || "N") !== (picked[0].batch || "N"); })) fail("รวมได้เฉพาะกองที่เป็น batch เดียวกัน (N กับ R รวมกันไม่ได้)");
+        if (picked.some(function(p){ return (p.batch || "N") !== (picked[0].batch || "N"); })) fail("รวมได้เฉพาะกองที่เป็น batch เดียวกัน (N, R, ชำรุด รวมข้ามกันไม่ได้)");
         var h = picked.reduce(function(m, p){ return Math.max(m, p.rows.length); }, 0), rows = [];
         if (req.mode === "stack") {                // bottom pile first; each one's layers go on top, columns lined up
           var widest = picked.reduce(function(m, p){ return Math.max(m, p.rows.reduce(function(n, r){ return Math.max(n, r.length); }, 0)); }, 0);
@@ -882,14 +883,22 @@ details.edit .fields{margin-top:6px}
   function section(len){ return 0.18 + len * 0.009; }
   var COL_NORMAL = 0xbdbab1, COL_DIM = 0x7b7973, COL_SEL = 0xf07a22;
   var COL_OLD = 0xb3a892, COL_OLD_DIM = 0x6f685b;                 // re-used (R) poles: duller, browner
-  function colBase(p){ return p.run.batch === "R" ? COL_OLD : COL_NORMAL; }
-  function colDim(p){ return p.run.batch === "R" ? COL_OLD_DIM : COL_DIM; }
+  var COL_BAD = 0x978c79, COL_BAD_DIM = 0x5a5348;                 // damaged (D, ชำรุด) poles: darker still
+  // N = new, R = re-used, D = damaged (ชำรุด); anything else counts as N
+  function batchOf(v){ v = String(v || "").trim().toUpperCase(); return v === "R" ? "R" : (v === "D" || v === "ชำรุด") ? "D" : "N"; }
+  function batchName(b){ return b === "R" ? "R นำกลับมาใช้ใหม่" : b === "D" ? "D ชำรุด" : "N ใหม่"; }
+  function batchSuffix(b, name){ return b === "R" ? " · R" : b === "D" && !/ชำรุด/.test(name || "") ? " · ชำรุด" : ""; }
+  function colBase(p){ return p.run.batch === "R" ? COL_OLD : p.run.batch === "D" ? COL_BAD : COL_NORMAL; }
+  function colDim(p){ return p.run.batch === "R" ? COL_OLD_DIM : p.run.batch === "D" ? COL_BAD_DIM : COL_DIM; }
+  function hashOf(t){ var h = 7; for (var i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) % 1000003; return h; }
   // stains, streaks and chips for re-used poles, drawn once and shared
-  var oldTex = null;
-  function oldTexture(){
-    if (oldTex) return oldTex;
+  var oldTex = {};
+  function oldTexture(kind){
+    kind = kind || "R";
+    if (oldTex[kind]) return oldTex[kind];
+    var bad = kind === "D";
     var c = document.createElement("canvas"); c.width = 256; c.height = 512;
-    var g = c.getContext("2d"), seed = 3;
+    var g = c.getContext("2d"), seed = bad ? 11 : 3;
     function rnd(){ seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
     g.fillStyle = "#e9e4d8"; g.fillRect(0, 0, 256, 512);
     for (var i = 0; i < 2600; i++) { var v = 150 + rnd() * 90; g.fillStyle = "rgba(" + (v | 0) + "," + (v * 0.96 | 0) + "," + (v * 0.88 | 0) + ",.35)"; g.fillRect(rnd() * 256, rnd() * 512, 2 + rnd() * 3, 2 + rnd() * 3); }
@@ -904,9 +913,25 @@ details.edit .fields{margin-top:6px}
       g.beginPath(); g.moveTo(sx, sy); g.lineTo(sx + (rnd() - 0.5) * 12, sy + len); g.stroke();
     }
     for (i = 0; i < 40; i++) { g.fillStyle = "rgba(60,55,48," + (0.3 + rnd() * 0.4) + ")"; g.fillRect(rnd() * 256, rnd() * 512, 1 + rnd() * 3, 1 + rnd() * 2); }   // chips
-    oldTex = new THREE.CanvasTexture(c);
-    oldTex.wrapS = oldTex.wrapT = THREE.RepeatWrapping;
-    return oldTex;
+    if (bad) {                                      // damaged: heavier grime, cracks and bare rusty rebar
+      g.fillStyle = "rgba(70,62,50,.22)"; g.fillRect(0, 0, 256, 512);
+      for (i = 0; i < 14; i++) {
+        var cx = rnd() * 256, cy = rnd() * 512;
+        g.strokeStyle = "rgba(25,22,18," + (0.55 + rnd() * 0.35) + ")"; g.lineWidth = 1 + rnd() * 2.2;
+        g.beginPath(); g.moveTo(cx, cy);
+        for (var k = 0; k < 7; k++) { cx += (rnd() - 0.5) * 34; cy += 6 + rnd() * 26; g.lineTo(cx, cy); }
+        g.stroke();
+      }
+      for (i = 0; i < 7; i++) {                     // spalled patches with rebar showing
+        var px = rnd() * 220, py = rnd() * 480, pw = 14 + rnd() * 26, ph = 18 + rnd() * 40;
+        g.fillStyle = "rgba(95,86,72,.85)"; g.fillRect(px, py, pw, ph);
+        g.strokeStyle = "rgba(140,70,30,.95)"; g.lineWidth = 3;
+        g.beginPath(); g.moveTo(px + pw * 0.3, py); g.lineTo(px + pw * 0.3, py + ph); g.moveTo(px + pw * 0.7, py); g.lineTo(px + pw * 0.7, py + ph); g.stroke();
+      }
+    }
+    var t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    return (oldTex[kind] = t);
   }
 
   var three = null, runs = [], poles = [];
@@ -1045,10 +1070,32 @@ details.edit .fields{margin-top:6px}
     three.ground.material.color.set(gr);
     three.backdrop.material.color.set(cssVar("--scene-tint") || "#ffffff");
   }
-  function labelTexture(label, old){
+  // damaged poles: each sits a little askew; about one in three is snapped in two with broken concrete at the break
+  var rubbleMat = null;
+  function damage(p, group, mesh, body, run, len){
+    var h = hashOf(p.label);
+    group.rotation.y = ((h % 5) - 2) * 0.0015;                       // barely skewed: the numbered ends must not touch
+    group.rotation.z = (((h >> 3) % 9) - 4) * 0.03;                   // rolled over a little on its long axis
+    if (h % 3) return;
+    var keep = 0.52, rest = 0.36, gap = 1 - keep - rest;
+    mesh.scale.z = keep; mesh.position.z = len * (0.5 - keep / 2);              // front part keeps the numbered end
+    var piece = new THREE.Mesh(run.geo, body);
+    piece.scale.z = rest; piece.position.z = -len * (0.5 - rest / 2);
+    piece.position.y = -run.S * 0.3; piece.rotation.x = -0.09; piece.rotation.y = ((h >> 5) % 2 ? 1 : -1) * 0.03;   // the back half has dropped
+    piece.castShadow = true; piece.receiveShadow = true; piece.userData.pole = p;
+    if (!rubbleMat) rubbleMat = new THREE.MeshStandardMaterial({ color: 0xa8a294, roughness: 1, flatShading: true });   // fresh broken concrete is lighter
+    var zBreak = len * (0.5 - keep);
+    [zBreak - 0.02, zBreak - len * gap + 0.02].forEach(function(z, i){
+      var r = new THREE.Mesh(new THREE.IcosahedronGeometry(run.S * (i ? 0.46 : 0.52), 0), rubbleMat);
+      r.position.set(0, (i ? -run.S * 0.32 : 0), z); r.scale.z = 0.5; r.rotation.set(h % 5, h % 3, 0);
+      r.castShadow = true; group.add(r);
+    });
+    group.add(piece);
+  }
+  function labelTexture(label, batch){
     var c = document.createElement("canvas"); c.width = c.height = 128;
     var g = c.getContext("2d");
-    g.fillStyle = old ? "#e6dbc2" : "#f6f4ee"; g.fillRect(0, 0, 128, 128);      // re-used poles: a yellowed plate
+    g.fillStyle = batch === "D" ? "#d4c9b0" : batch === "R" || batch === true ? "#e6dbc2" : "#f6f4ee"; g.fillRect(0, 0, 128, 128);   // older poles: a yellowed plate
     g.strokeStyle = "#d9580b"; g.lineWidth = 10; g.strokeRect(5, 5, 118, 118);
     var n = label.length, size = n <= 2 ? 78 : n === 3 ? 56 : n === 4 ? 42 : n <= 6 ? 30 : 22;
     g.fillStyle = "#1d2327";
@@ -1079,6 +1126,7 @@ details.edit .fields{margin-top:6px}
       run.poles.forEach(function(p){ p.mats.forEach(function(m){ if (m.map) m.map.dispose(); m.dispose(); }); });
       run.battens.forEach(function(b){ b.mesh.geometry.dispose(); });
       if (run.sign) { run.sign.material.map.dispose(); run.sign.material.dispose(); }
+      if (run.root) run.root.traverse(function(o){ if (o.isMesh && o.geometry && o.geometry !== run.geo) o.geometry.dispose(); });   // plates, battens, broken bits
       if (run.geo) run.geo.dispose();
       if (run.root) three.yard.remove(run.root);
     });
@@ -1091,7 +1139,7 @@ details.edit .fields{margin-top:6px}
     state.piles.forEach(function(d){
       var len = lenOf(types[d.mat]), S = section(len);
       var cols = d.rows.reduce(function(m, r){ return Math.max(m, r.length); }, 1);
-      var run = { name: d.name, mat: d.mat, batch: d.batch === "R" ? "R" : "N", rows: d.rows, len: len, S: S, pitchX: S + 0.08, pitchY: S + BAT, cols: cols, poles: [], battens: [], gone: new Set(d.removed) };
+      var run = { name: d.name, mat: d.mat, batch: batchOf(d.batch), rows: d.rows, len: len, S: S, pitchX: S + 0.08, pitchY: S + BAT, cols: cols, poles: [], battens: [], gone: new Set(d.removed) };
       run.width = cols * run.pitchX;
       run.height = d.rows.length * run.pitchY;
       runs.push(run);
@@ -1125,7 +1173,7 @@ details.edit .fields{margin-top:6px}
             run.battens.push({ mesh: m, layer: layer });
           });
         });
-        var sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTexture(run.name + (run.batch === "R" ? " · R" : "")), depthTest: false }));
+        var sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTexture(run.name + batchSuffix(run.batch, run.name)), depthTest: false }));
         sign.scale.set(2.6, 0.57, 1);
         sign.position.set(0, run.height + 0.55, len / 2);
         sign.renderOrder = 10;
@@ -1137,10 +1185,10 @@ details.edit .fields{margin-top:6px}
           if (!label) return;                    // empty position in this layer
           var p = { label: label, run: run, col: col, layer: layer, alpha: 1, ty: 0, mats: [], gone: run.gone.has(label) };
           if (three) {
-            var body = run.batch === "R"
-              ? new THREE.MeshStandardMaterial({ color: COL_OLD, map: oldTexture(), roughness: 1, flatShading: true })   // re-used: weathered concrete
+            var body = run.batch === "R" || run.batch === "D"
+              ? new THREE.MeshStandardMaterial({ color: run.batch === "D" ? COL_BAD : COL_OLD, map: oldTexture(run.batch), roughness: 1, flatShading: true })   // weathered / damaged concrete
               : new THREE.MeshStandardMaterial({ color: COL_NORMAL, roughness: 0.92, flatShading: true });
-            var tag = new THREE.MeshBasicMaterial({ map: labelTexture(label, run.batch === "R") });
+            var tag = new THREE.MeshBasicMaterial({ map: labelTexture(label, run.batch) });
             p.mats = [body, tag];
             var mesh = new THREE.Mesh(run.geo, body);
             mesh.castShadow = true; mesh.receiveShadow = true;
@@ -1151,6 +1199,7 @@ details.edit .fields{margin-top:6px}
             back.position.z = -len / 2 - 0.004; back.rotation.y = Math.PI;
             var group = new THREE.Group();
             group.add(mesh, front, back);
+            if (run.batch === "D") damage(p, group, mesh, body, run, len);
             group.position.x = (col - (run.cols - 1) / 2) * run.pitchX;
             p.group = group; p.mesh = mesh;
             run.root.add(group);
@@ -1322,7 +1371,7 @@ details.edit .fields{margin-top:6px}
         row.forEach(function(label, ci){
           if (!label) return;
           var at = label === q ? 0 : label.indexOf(q) === 0 ? 1 : label.indexOf(q) > 0 ? 2 : -1;
-          if (at >= 0) out.push({ label: label, pile: d.name, mat: d.mat, batch: d.batch === "R" ? "R" : "N", layer: li + 1, layers: d.rows.length, col: ci + 1, gone: gone.has(label), rank: at });
+          if (at >= 0) out.push({ label: label, pile: d.name, mat: d.mat, batch: batchOf(d.batch), layer: li + 1, layers: d.rows.length, col: ci + 1, gone: gone.has(label), rank: at });
         });
       });
     });
@@ -1533,7 +1582,7 @@ details.edit .fields{margin-top:6px}
         var left = leftIn(run), b = el("button", "pilebtn"); b.type = "button";
         b.appendChild(el("span", "nm", run.name));
         b.appendChild(el("span", "left", left + " ต้น"));
-        b.appendChild(el("span", "sub", typeDesc(run.mat) + " · " + (run.batch === "R" ? "R นำกลับมาใช้ใหม่" : "N ใหม่")));
+        b.appendChild(el("span", "sub", typeDesc(run.mat) + " · " + batchName(run.batch)));
         if (left) b.addEventListener("click", function(){ choosePile(run.name); }); else b.disabled = true;
         box.appendChild(b);
       });
@@ -2772,7 +2821,7 @@ details.edit .fields{margin-top:6px}
     var mat = $("inType").value;
     var name = $("inName").value.trim() || ("เสา " + lenOf(types[mat]) + " ม.");
     if (runs.some(function(r){ return r.name === name; })) { setStatus("มีกองชื่อ " + name + " อยู่แล้ว ตั้งชื่อใหม่", true); return; }
-    var job = { name: name, mat: mat, rows: parsed.rows, n: n, dup: parsed.dup, batch: $("inBatch").value === "R" ? "R" : "N" };
+    var job = { name: name, mat: mat, rows: parsed.rows, n: n, dup: parsed.dup, batch: batchOf($("inBatch").value) };
     if (three && !document.querySelector(".app").classList.contains("no3d") && !moving) startPlace(job);   // put it down by hand first
     else savePile(job, null);
   });
@@ -2983,7 +3032,7 @@ details.edit .fields{margin-top:6px}
 
   /* ---------- admin: merge piles ---------- */
   var mergeSel = new Set();
-  function batchPill(b){ return el("span", "pill batch" + (b === "R" ? " old" : ""), b === "R" ? "R นำกลับมาใช้ใหม่" : "N ใหม่"); }
+  function batchPill(b){ return el("span", "pill batch" + (b === "R" ? " old" : b === "D" ? " broken" : ""), batchName(b)); }
   function mergeMode(){ var r = document.querySelector('input[name="mergeMode"]:checked'); return r ? r.value : "side"; }
   // side by side: left to right as they stand in the yard; stacked: in the order they were ticked, bottom first
   function mergeOrder(){
@@ -3024,7 +3073,7 @@ details.edit .fields{margin-top:6px}
       var n = order.indexOf(run.name);
       lab.appendChild(cb);
       var stack = mergeMode() === "stack", tag = n < 0 ? "" : stack ? (n === 0 ? "ล่างสุด · " : n === order.length - 1 ? "บนสุด · " : "ชั้นที่ " + (n + 1) + " · ") : (n + 1) + ". ";
-      lab.appendChild(el("span", null, tag + run.name + " · " + typeDesc(run.mat) + " · " + run.batch + " · " + run.rows.length + " ชั้น × " + run.cols + " ต้น · " + leftIn(run) + "/" + run.poles.length + " ต้น"));
+      lab.appendChild(el("span", null, tag + run.name + " · " + typeDesc(run.mat) + " · " + batchName(run.batch) + " · " + run.rows.length + " ชั้น × " + run.cols + " ต้น · " + leftIn(run) + "/" + run.poles.length + " ต้น"));
       cb.addEventListener("change", function(){ if (cb.checked) mergeSel.add(run.name); else mergeSel.delete(run.name); renderMerge(); paintMerge(); });
       box.appendChild(lab);
     });
@@ -3409,8 +3458,8 @@ details.edit .fields{margin-top:6px}
     }
     if (document.fonts && document.fonts.load) {
       document.fonts.load("700 78px 'Chakra Petch'").then(function(){
-        poles.forEach(function(p){ if (p.mats[1]) { p.mats[1].map.dispose(); p.mats[1].map = labelTexture(p.label, p.run.batch === "R"); p.mats[1].needsUpdate = true; } });
-        runs.forEach(function(run){ if (run.sign) { run.sign.material.map.dispose(); run.sign.material.map = signTexture(run.name + (run.batch === "R" ? " · R" : "")); run.sign.material.needsUpdate = true; } });
+        poles.forEach(function(p){ if (p.mats[1]) { p.mats[1].map.dispose(); p.mats[1].map = labelTexture(p.label, p.run.batch); p.mats[1].needsUpdate = true; } });
+        runs.forEach(function(run){ if (run.sign) { run.sign.material.map.dispose(); run.sign.material.map = signTexture(run.name + batchSuffix(run.batch, run.name)); run.sign.material.needsUpdate = true; } });
       }).catch(function(){});
     }
     tick();
