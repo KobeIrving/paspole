@@ -127,6 +127,8 @@ button.sendbtn{border-color:#2e7d32;color:#2e7d32;font-weight:600}
 .findpile{font-weight:600;min-width:0;overflow-wrap:anywhere}
 .findrow .pill{align-self:flex-start;white-space:normal}
 .seg2{display:flex;gap:14px;flex-wrap:wrap}
+.pill.batch{font-weight:600}
+.pill.batch.old{background:#efe6d6;border-color:#8a7350;color:#6b5634}
 .pill.ok{border-color:#2e7d32;color:#2e7d32;font-weight:600}
 .form-row{display:flex;flex-direction:column;gap:6px;border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
 .form-row .form-txt{display:flex;flex-direction:column;gap:2px;min-width:0}
@@ -499,6 +501,7 @@ details.edit .fields{margin-top:6px}
           <h2>เพิ่มกองเสา</h2>
           <div class="fields">
             <label for="inType">ชนิดเสา</label><select id="inType"></select>
+            <label for="inBatch">Batch</label><select id="inBatch"><option value="N">N · เสาใหม่ (New)</option><option value="R">R · นำกลับมาใช้ใหม่ (Re-use)</option></select>
             <label for="inName">ชื่อกอง</label><input type="text" id="inName" placeholder="เช่น เสา 9 ม. ลานหลัง" maxlength="40">
             <label for="inPer">ต้นต่อชั้น</label><input type="number" id="inPer" min="1" max="20" step="1" value="6">
           </div>
@@ -717,7 +720,7 @@ details.edit .fields{margin-top:6px}
       } else if (a === "addPile") {
         admin();
         if (db.piles.some(function(p){ return p.name === req.name; })) fail("มีกองชื่อ " + req.name + " อยู่แล้ว");
-        db.piles.push({ name: req.name, mat: req.mat, rows: req.rows, removed: [] });
+        db.piles.push({ name: req.name, mat: req.mat, batch: req.batch === "R" ? "R" : "N", rows: req.rows, removed: [] });
         (req.positions || []).forEach(function(q){ db.piles.forEach(function(p){ if (p.name === q.name) p.pos = { x: Number(q.x), z: Number(q.z) }; }); });
       } else if (a === "deletePile") {
         admin();
@@ -736,6 +739,7 @@ details.edit .fields{margin-top:6px}
         var picked = names.map(function(n){ var p = db.piles.filter(function(x){ return x.name === n; })[0]; if (!p) fail("ไม่พบกอง " + n); return p; });
         if (names.indexOf(name) < 0 && db.piles.some(function(p){ return p.name === name; })) fail("มีกองชื่อ " + name + " อยู่แล้ว");
         if (picked.some(function(p){ return p.mat !== picked[0].mat; })) fail("รวมได้เฉพาะกองที่เป็นเสาชนิดเดียวกัน");
+        if (picked.some(function(p){ return (p.batch || "N") !== (picked[0].batch || "N"); })) fail("รวมได้เฉพาะกองที่เป็น batch เดียวกัน (N กับ R รวมกันไม่ได้)");
         var h = picked.reduce(function(m, p){ return Math.max(m, p.rows.length); }, 0), rows = [];
         if (req.mode === "stack") {                // bottom pile first; each one's layers go on top, columns lined up
           var widest = picked.reduce(function(m, p){ return Math.max(m, p.rows.reduce(function(n, r){ return Math.max(n, r.length); }, 0)); }, 0);
@@ -754,7 +758,7 @@ details.edit .fields{margin-top:6px}
         rows.forEach(function(r){ while (r.length && !r[r.length - 1]) r.pop(); });
         var labels = [].concat.apply([], rows).filter(Boolean);
         if (new Set(labels).size !== labels.length) fail("มีเลขเสาซ้ำกันระหว่างกองที่เลือก");
-        var merged = { name: name, mat: picked[0].mat, rows: rows, removed: [].concat.apply([], picked.map(function(p){ return p.removed; })),
+        var merged = { name: name, mat: picked[0].mat, batch: picked[0].batch || "N", rows: rows, removed: [].concat.apply([], picked.map(function(p){ return p.removed; })),
                        pos: req.pos ? { x: Number(req.pos.x), z: Number(req.pos.z) } : null };
         var at = db.piles.indexOf(picked[0]);
         db.piles = db.piles.filter(function(p){ return picked.indexOf(p) < 0; });
@@ -852,6 +856,33 @@ details.edit .fields{margin-top:6px}
   var GAP = 1.4, BAT = 0.07;
   function section(len){ return 0.18 + len * 0.009; }
   var COL_NORMAL = 0xbdbab1, COL_DIM = 0x7b7973, COL_SEL = 0xf07a22;
+  var COL_OLD = 0xb3a892, COL_OLD_DIM = 0x6f685b;                 // re-used (R) poles: duller, browner
+  function colBase(p){ return p.run.batch === "R" ? COL_OLD : COL_NORMAL; }
+  function colDim(p){ return p.run.batch === "R" ? COL_OLD_DIM : COL_DIM; }
+  // stains, streaks and chips for re-used poles, drawn once and shared
+  var oldTex = null;
+  function oldTexture(){
+    if (oldTex) return oldTex;
+    var c = document.createElement("canvas"); c.width = 256; c.height = 512;
+    var g = c.getContext("2d"), seed = 3;
+    function rnd(){ seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+    g.fillStyle = "#e9e4d8"; g.fillRect(0, 0, 256, 512);
+    for (var i = 0; i < 2600; i++) { var v = 150 + rnd() * 90; g.fillStyle = "rgba(" + (v | 0) + "," + (v * 0.96 | 0) + "," + (v * 0.88 | 0) + ",.35)"; g.fillRect(rnd() * 256, rnd() * 512, 2 + rnd() * 3, 2 + rnd() * 3); }
+    for (i = 0; i < 26; i++) {                      // dark weather stains
+      var x = rnd() * 256, y = rnd() * 512, r = 10 + rnd() * 38, gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, "rgba(90,80,62," + (0.18 + rnd() * 0.25) + ")"); gr.addColorStop(1, "rgba(90,80,62,0)");
+      g.fillStyle = gr; g.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    for (i = 0; i < 9; i++) {                       // rust-brown streaks along the pole
+      var sx = rnd() * 256, sy = rnd() * 512, len = 60 + rnd() * 180;
+      g.strokeStyle = "rgba(122,84,48," + (0.12 + rnd() * 0.18) + ")"; g.lineWidth = 2 + rnd() * 5;
+      g.beginPath(); g.moveTo(sx, sy); g.lineTo(sx + (rnd() - 0.5) * 12, sy + len); g.stroke();
+    }
+    for (i = 0; i < 40; i++) { g.fillStyle = "rgba(60,55,48," + (0.3 + rnd() * 0.4) + ")"; g.fillRect(rnd() * 256, rnd() * 512, 1 + rnd() * 3, 1 + rnd() * 2); }   // chips
+    oldTex = new THREE.CanvasTexture(c);
+    oldTex.wrapS = oldTex.wrapT = THREE.RepeatWrapping;
+    return oldTex;
+  }
 
   var three = null, runs = [], poles = [];
   var wz = null; // withdrawal in progress: {pile: name|"", key: lineKey|"", sel:Set<label>, booking, contractor}
@@ -989,10 +1020,10 @@ details.edit .fields{margin-top:6px}
     three.ground.material.color.set(gr);
     three.backdrop.material.color.set(cssVar("--scene-tint") || "#ffffff");
   }
-  function labelTexture(label){
+  function labelTexture(label, old){
     var c = document.createElement("canvas"); c.width = c.height = 128;
     var g = c.getContext("2d");
-    g.fillStyle = "#f6f4ee"; g.fillRect(0, 0, 128, 128);
+    g.fillStyle = old ? "#e6dbc2" : "#f6f4ee"; g.fillRect(0, 0, 128, 128);      // re-used poles: a yellowed plate
     g.strokeStyle = "#d9580b"; g.lineWidth = 10; g.strokeRect(5, 5, 118, 118);
     var n = label.length, size = n <= 2 ? 78 : n === 3 ? 56 : n === 4 ? 42 : n <= 6 ? 30 : 22;
     g.fillStyle = "#1d2327";
@@ -1035,7 +1066,7 @@ details.edit .fields{margin-top:6px}
     state.piles.forEach(function(d){
       var len = lenOf(types[d.mat]), S = section(len);
       var cols = d.rows.reduce(function(m, r){ return Math.max(m, r.length); }, 1);
-      var run = { name: d.name, mat: d.mat, rows: d.rows, len: len, S: S, pitchX: S + 0.08, pitchY: S + BAT, cols: cols, poles: [], battens: [], gone: new Set(d.removed) };
+      var run = { name: d.name, mat: d.mat, batch: d.batch === "R" ? "R" : "N", rows: d.rows, len: len, S: S, pitchX: S + 0.08, pitchY: S + BAT, cols: cols, poles: [], battens: [], gone: new Set(d.removed) };
       run.width = cols * run.pitchX;
       run.height = d.rows.length * run.pitchY;
       runs.push(run);
@@ -1069,7 +1100,7 @@ details.edit .fields{margin-top:6px}
             run.battens.push({ mesh: m, layer: layer });
           });
         });
-        var sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTexture(run.name), depthTest: false }));
+        var sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTexture(run.name + (run.batch === "R" ? " · R" : "")), depthTest: false }));
         sign.scale.set(2.6, 0.57, 1);
         sign.position.set(0, run.height + 0.55, len / 2);
         sign.renderOrder = 10;
@@ -1081,8 +1112,10 @@ details.edit .fields{margin-top:6px}
           if (!label) return;                    // empty position in this layer
           var p = { label: label, run: run, col: col, layer: layer, alpha: 1, ty: 0, mats: [], gone: run.gone.has(label) };
           if (three) {
-            var body = new THREE.MeshStandardMaterial({ color: COL_NORMAL, roughness: 0.92, flatShading: true });
-            var tag = new THREE.MeshBasicMaterial({ map: labelTexture(label) });
+            var body = run.batch === "R"
+              ? new THREE.MeshStandardMaterial({ color: COL_OLD, map: oldTexture(), roughness: 1, flatShading: true })   // re-used: weathered concrete
+              : new THREE.MeshStandardMaterial({ color: COL_NORMAL, roughness: 0.92, flatShading: true });
+            var tag = new THREE.MeshBasicMaterial({ map: labelTexture(label, run.batch === "R") });
             p.mats = [body, tag];
             var mesh = new THREE.Mesh(run.geo, body);
             mesh.castShadow = true; mesh.receiveShadow = true;
@@ -1221,8 +1254,8 @@ details.edit .fields{margin-top:6px}
     runs.forEach(function(r){ if (r.sign) r.sign.visible = !(wz && wz.pile === r.name); });
     poles.forEach(function(p){
       if (!p.mats[0]) return;
-      var c = COL_NORMAL;
-      if (wz && wz.pile) c = p.run.name !== wz.pile ? COL_DIM : (wz.sel.has(p.label) ? COL_SEL : COL_NORMAL);
+      var c = colBase(p);
+      if (wz && wz.pile) c = p.run.name !== wz.pile ? colDim(p) : (wz.sel.has(p.label) ? COL_SEL : colBase(p));
       p.mats[0].color.setHex(c);
     });
   }
@@ -1264,7 +1297,7 @@ details.edit .fields{margin-top:6px}
         row.forEach(function(label, ci){
           if (!label) return;
           var at = label === q ? 0 : label.indexOf(q) === 0 ? 1 : label.indexOf(q) > 0 ? 2 : -1;
-          if (at >= 0) out.push({ label: label, pile: d.name, mat: d.mat, layer: li + 1, layers: d.rows.length, col: ci + 1, gone: gone.has(label), rank: at });
+          if (at >= 0) out.push({ label: label, pile: d.name, mat: d.mat, batch: d.batch === "R" ? "R" : "N", layer: li + 1, layers: d.rows.length, col: ci + 1, gone: gone.has(label), rank: at });
         });
       });
     });
@@ -1299,7 +1332,7 @@ details.edit .fields{margin-top:6px}
       var r = el("div", "findrow" + (h.gone ? " gone" : "")), top = el("div", "findtop");
       top.appendChild(el("b", "findno", h.label));
       top.appendChild(el("span", "findpile", h.pile));
-      top.appendChild(el("span", "pill type", typeDesc(h.mat)));
+      top.appendChild(el("span", "pill type", typeDesc(h.mat))); top.appendChild(batchPill(h.batch));
       r.appendChild(top);
       var now = !h.gone && poleOf(h);              // poles above a withdrawn one may have slid down: say where it is now
       if (now && now.level != null) h.layer = now.level + 1;
@@ -1461,7 +1494,7 @@ details.edit .fields{margin-top:6px}
         h.appendChild(el("h2", null, run.name));
         var cnt = el("span", "count"); cnt.appendChild(document.createTextNode("คงเหลือ ")); cnt.appendChild(el("b", null, leftIn(run))); cnt.appendChild(document.createTextNode(" / " + run.poles.length + " ต้น"));
         h.appendChild(cnt); c.appendChild(h);
-        var r = el("div", "row-actions"); r.appendChild(el("span", "pill type", typeDesc(run.mat))); c.appendChild(r);
+        var r = el("div", "row-actions"); r.appendChild(el("span", "pill type", typeDesc(run.mat))); r.appendChild(batchPill(run.batch)); c.appendChild(r);
         box.appendChild(c);
       });
       if (!runs.length) box.appendChild(el("p", "empty", "ยังไม่มีกองเสา ให้ผู้ดูแลเพิ่มกองในแท็บ ผู้ดูแล"));
@@ -1475,7 +1508,7 @@ details.edit .fields{margin-top:6px}
         var left = leftIn(run), b = el("button", "pilebtn"); b.type = "button";
         b.appendChild(el("span", "nm", run.name));
         b.appendChild(el("span", "left", left + " ต้น"));
-        b.appendChild(el("span", "sub", typeDesc(run.mat)));
+        b.appendChild(el("span", "sub", typeDesc(run.mat) + " · " + (run.batch === "R" ? "R นำกลับมาใช้ใหม่" : "N ใหม่")));
         if (left) b.addEventListener("click", function(){ choosePile(run.name); }); else b.disabled = true;
         box.appendChild(b);
       });
@@ -2552,7 +2585,7 @@ details.edit .fields{margin-top:6px}
       h.appendChild(el("span", "count", leftIn(run) + " / " + run.poles.length + " ต้น"));
       c.appendChild(h);
       var r = el("div", "row-actions");
-      r.appendChild(el("span", "pill type", typeDesc(run.mat)));
+      r.appendChild(el("span", "pill type", typeDesc(run.mat))); r.appendChild(batchPill(run.batch));
       var b = el("button", "small", "ลบกองนี้"); b.type = "button";
       twoStep(b, "ลบกองนี้", function(){
         var code = adminCode(); if (!code) return;
@@ -2664,13 +2697,13 @@ details.edit .fields{margin-top:6px}
     var mat = $("inType").value;
     var name = $("inName").value.trim() || ("เสา " + lenOf(types[mat]) + " ม.");
     if (runs.some(function(r){ return r.name === name; })) { setStatus("มีกองชื่อ " + name + " อยู่แล้ว ตั้งชื่อใหม่", true); return; }
-    var job = { name: name, mat: mat, rows: parsed.rows, n: n, dup: parsed.dup };
+    var job = { name: name, mat: mat, rows: parsed.rows, n: n, dup: parsed.dup, batch: $("inBatch").value === "R" ? "R" : "N" };
     if (three && !document.querySelector(".app").classList.contains("no3d") && !moving) startPlace(job);   // put it down by hand first
     else savePile(job, null);
   });
   function savePile(job, positions){
     setStatus("กำลังบันทึก");
-    var req = { action: "addPile", admin: $("inAdmin").value, name: job.name, mat: job.mat, rows: job.rows };
+    var req = { action: "addPile", admin: $("inAdmin").value, name: job.name, mat: job.mat, rows: job.rows, batch: job.batch };
     if (positions) req.positions = positions;
     return request(req, true).then(function(){
       $("inNums").value = ""; $("inName").value = "";
@@ -2875,6 +2908,7 @@ details.edit .fields{margin-top:6px}
 
   /* ---------- admin: merge piles ---------- */
   var mergeSel = new Set();
+  function batchPill(b){ return el("span", "pill batch" + (b === "R" ? " old" : ""), b === "R" ? "R นำกลับมาใช้ใหม่" : "N ใหม่"); }
   function mergeMode(){ var r = document.querySelector('input[name="mergeMode"]:checked'); return r ? r.value : "side"; }
   // side by side: left to right as they stand in the yard; stacked: in the order they were ticked, bottom first
   function mergeOrder(){
@@ -2911,11 +2945,11 @@ details.edit .fields{margin-top:6px}
       var id = "mg-" + runs.indexOf(run), lab = el("label", "check"), cb = document.createElement("input");
       cb.type = "checkbox"; cb.id = id; lab.htmlFor = id;
       cb.checked = mergeSel.has(run.name);
-      cb.disabled = !!first && run.mat !== first.mat;
+      cb.disabled = !!first && (run.mat !== first.mat || run.batch !== first.batch);
       var n = order.indexOf(run.name);
       lab.appendChild(cb);
       var stack = mergeMode() === "stack", tag = n < 0 ? "" : stack ? (n === 0 ? "ล่างสุด · " : n === order.length - 1 ? "บนสุด · " : "ชั้นที่ " + (n + 1) + " · ") : (n + 1) + ". ";
-      lab.appendChild(el("span", null, tag + run.name + " · " + typeDesc(run.mat) + " · " + run.rows.length + " ชั้น × " + run.cols + " ต้น · " + leftIn(run) + "/" + run.poles.length + " ต้น"));
+      lab.appendChild(el("span", null, tag + run.name + " · " + typeDesc(run.mat) + " · " + run.batch + " · " + run.rows.length + " ชั้น × " + run.cols + " ต้น · " + leftIn(run) + "/" + run.poles.length + " ต้น"));
       cb.addEventListener("change", function(){ if (cb.checked) mergeSel.add(run.name); else mergeSel.delete(run.name); renderMerge(); paintMerge(); });
       box.appendChild(lab);
     });
@@ -2933,7 +2967,7 @@ details.edit .fields{margin-top:6px}
     $("btnMergeOk").disabled = mergeSel.size < 2;
   }
   function paintMerge(){
-    poles.forEach(function(p){ if (p.mats[0]) p.mats[0].color.setHex(!mergeSel.size ? COL_NORMAL : mergeSel.has(p.run.name) ? COL_SEL : COL_DIM); });
+    poles.forEach(function(p){ if (p.mats[0]) p.mats[0].color.setHex(!mergeSel.size ? colBase(p) : mergeSel.has(p.run.name) ? COL_SEL : colDim(p)); });
   }
   function closeMerge(text, err){
     $("mergeBox").hidden = true; $("btnMerge").hidden = false; mergeSel.clear(); dropMergeGhost(); paint();
@@ -3300,8 +3334,8 @@ details.edit .fields{margin-top:6px}
     }
     if (document.fonts && document.fonts.load) {
       document.fonts.load("700 78px 'Chakra Petch'").then(function(){
-        poles.forEach(function(p){ if (p.mats[1]) { p.mats[1].map.dispose(); p.mats[1].map = labelTexture(p.label); p.mats[1].needsUpdate = true; } });
-        runs.forEach(function(run){ if (run.sign) { run.sign.material.map.dispose(); run.sign.material.map = signTexture(run.name); run.sign.material.needsUpdate = true; } });
+        poles.forEach(function(p){ if (p.mats[1]) { p.mats[1].map.dispose(); p.mats[1].map = labelTexture(p.label, p.run.batch === "R"); p.mats[1].needsUpdate = true; } });
+        runs.forEach(function(run){ if (run.sign) { run.sign.material.map.dispose(); run.sign.material.map = signTexture(run.name + (run.batch === "R" ? " · R" : "")); run.sign.material.needsUpdate = true; } });
       }).catch(function(){});
     }
     tick();
