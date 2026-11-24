@@ -666,6 +666,7 @@ details.edit .fields{margin-top:6px}
         if (!labels.length) fail("ยังไม่ได้เลือกเสา");
         var pile = db.piles.filter(function(p){ return p.name === req.pile; })[0];
         if (!pile) fail("ไม่พบกอง " + req.pile);
+        if (batchOf(pile.batch) === "D") fail("กอง " + pile.name + " เป็นเสาชำรุด เบิกไม่ได้");
         var line;
         if (emg) {
           var cause = String(req.cause || "").trim(), place = String(req.place || "").trim(), order = String(req.order || "").replace(/\s+/g, "");
@@ -1476,7 +1477,8 @@ details.edit .fields{margin-top:6px}
         look.addEventListener("click", function(){ showPole(h); });
         a.appendChild(look);
       }
-      if (!h.gone) {
+      if (!h.gone && h.batch === "D") r.appendChild(el("span", "pill batch broken", "เสาชำรุดเบิกไม่ได้"));
+      else if (!h.gone) {
         var go = el("button", "small primary", "เบิกต้นนี้"); go.type = "button";
         go.addEventListener("click", function(){ startWithPole(h); });
         a.appendChild(go);
@@ -1557,6 +1559,12 @@ details.edit .fields{margin-top:6px}
     paint(); syncChips(); updateCount();
   }
   function choosePile(name){
+    var r0 = runOf(name);
+    if (r0 && r0.batch === "D") {                 // damaged poles stay in the yard: they are never handed out
+      toast("กอง " + name + " เป็นเสาชำรุด เบิกไม่ได้");
+      if (wz && wz.pre) { wz = null; frame(null); paint(); renderW(); }
+      return;
+    }
     wz.pile = name; wz.key = ""; wz.sel.clear();
     frameFace(runOf(name)); paint(); renderW();
   }
@@ -1637,8 +1645,9 @@ details.edit .fields{margin-top:6px}
         var left = leftIn(run), b = el("button", "pilebtn"); b.type = "button";
         b.appendChild(el("span", "nm", run.name));
         b.appendChild(el("span", "left", left + " ต้น"));
-        b.appendChild(el("span", "sub", typeDesc(run.mat) + " · " + batchName(run.batch)));
-        if (left) b.addEventListener("click", function(){ choosePile(run.name); }); else b.disabled = true;
+        b.appendChild(el("span", "sub", typeDesc(run.mat) + " · " + batchName(run.batch) + (run.batch === "D" ? " · เบิกไม่ได้" : "")));
+        if (run.batch === "D") { b.disabled = true; b.classList.add("nogo"); }
+        else if (left) b.addEventListener("click", function(){ choosePile(run.name); }); else b.disabled = true;
         box.appendChild(b);
       });
       box.appendChild(el("p", "note", "หรือแตะกองเสาในภาพ 3D"));
