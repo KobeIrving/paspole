@@ -136,6 +136,7 @@ button.sendbtn{border-color:#2e7d32;color:#2e7d32;font-weight:600}
 .pein.gone{text-decoration:line-through;color:var(--muted,#888);background:var(--bg)}
 .pein.changed{border-color:var(--accent);background:var(--accent-soft);text-decoration:none;color:var(--ink);font-weight:600}
 .peempty{min-height:30px}
+.appupdate{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom));z-index:60;font:inherit;font-size:14px;font-weight:600;padding:10px 16px;border-radius:999px;border:0;background:var(--accent);color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer}
 .peold{font-size:13px;text-align:center;padding:6px 2px;border-radius:6px;background:var(--bg);color:var(--muted,#888);border:1px solid var(--line)}
 .peadd{font:inherit;font-size:18px;line-height:1;padding:4px 2px;border:1.5px dashed var(--accent);border-radius:6px;background:transparent;color:var(--accent);cursor:pointer;min-height:30px}
 @media (hover:hover){.peadd:hover{background:var(--accent-soft)}}
@@ -888,18 +889,42 @@ details.edit .fields{margin-top:6px}
     var over = false;
     return function(){ if (over) return; over = true; clearTimeout(t); busyCount = Math.max(0, busyCount - 1); if (!busyCount) $("busy").hidden = true; };
   }
+  // the refresh sends the fingerprint of the data it already has; when nothing changed the script answers "same" without the data
+  var lastRev = "", SNAP_KEY = "pole-state-snap", snapTime = "";   // snapTime: shown data came from the phone, not yet from the sheet
   function request(req, quiet){
-    busy = true; setConn("กำลังเชื่อมต่อ");
+    busy = true; setConn(snapTime ? "ข้อมูลเมื่อ " + snapTime + " กำลังอัปเดต" : "กำลังเชื่อมต่อ");
+    if (req.action === "state" && lastRev && loaded) req.since = lastRev;
     var done = req.action === "state" ? function(){} : busyOn(BUSY_TEXT[req.action] || "กำลังทำงาน");
     return call(req).then(function(res){
       busy = false; done();
       if (!res || !res.ok) { setConn(); throw new Error(res && res.error || "เซิร์ฟเวอร์ตอบกลับไม่ถูกต้อง"); }
+      if (res.rev) lastRev = res.rev;
+      snapTime = "";
+      if (res.same) { setConn(); return res; }
       loaded = true; applyState(res.state); setConn();
+      saveSnap(res);
       return res;
     }, function(){
-      busy = false; done(); setConn("เชื่อมต่อ Google Sheet ไม่ได้", true);
+      busy = false; done(); setConn(snapTime ? "ออฟไลน์ แสดงข้อมูลเมื่อ " + snapTime : "เชื่อมต่อ Google Sheet ไม่ได้", true);
       throw new Error("เชื่อมต่อ Google Sheet ไม่ได้ ตรวจอินเทอร์เน็ตแล้วลองใหม่");
     }).catch(function(err){ if (!quiet) toast(err.message); throw err; });
+  }
+  // last data from the sheet, kept on the phone: the app shows it at once on the next open, then brings it up to date
+  function saveSnap(res){
+    if (!API || !res.state) return;
+    try { localStorage.setItem(SNAP_KEY, JSON.stringify({ api: API, rev: res.rev || "", at: Date.now(), state: res.state })); } catch (e) {}
+  }
+  function loadSnap(){
+    if (!API) return false;
+    try {
+      var s = JSON.parse(localStorage.getItem(SNAP_KEY) || "null");
+      if (!s || s.api !== API || !s.state || !Array.isArray(s.state.piles)) return false;
+      loaded = true; applyState(s.state); lastRev = s.rev || "";
+      var d = new Date(s.at);
+      snapTime = ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+      setConn("ข้อมูลเมื่อ " + snapTime + " กำลังอัปเดต");
+      return true;
+    } catch (e) { return false; }
   }
   function setConn(text, warn){
     var c = $("conn");
@@ -2499,11 +2524,17 @@ details.edit .fields{margin-top:6px}
   }
   if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
     window.addEventListener("load", function(){ navigator.serviceWorker.register("sw.js").catch(function(){}); });
+    navigator.serviceWorker.addEventListener("message", function(e){
+      if (!e.data || e.data.type !== "updated" || $("appUpdate")) return;
+      var b = el("button", "appupdate", "มีแอปเวอร์ชันใหม่ แตะเพื่อโหลด"); b.type = "button"; b.id = "appUpdate";
+      b.addEventListener("click", function(){ if (busy) { toast("รอบันทึกให้เสร็จก่อน"); return; } location.reload(); });
+      document.body.appendChild(b);
+    });
   }
   function saveW(){
     if (!wz || busy) return;
     var st = $("actStatus"), user = $("actUser").value.trim(), n = wz.sel.size, line = lineOf(wz.key);
-    function err(t){ st.textContent = t; st.classList.add("err"); }
+    function err(t){ var x = $("actStatus") || st; x.textContent = t; x.classList.add("err"); }   // the panel may have been redrawn
     if (!user) { err("ใส่ชื่อผู้เบิกก่อนบันทึก"); $("actUser").parentNode.hidden = false; $("actUser").focus(); return; }
     var emg = wz.kind === "emergency";
     if (emg && !wz.cause) { err("เลือกประเภทเหตุก่อน"); $("emgCause").focus(); return; }
@@ -2518,6 +2549,13 @@ details.edit .fields{margin-top:6px}
       : { action: "withdraw", user: user, pile: wz.pile, key: wz.key, labels: Array.from(wz.sel), booking: wz.booking, contractor: wz.contractor };
     var wbs = emg ? "เหตุฉุกเฉิน " + wz.cause : line.wbs, keep = wz, photo = wz.photo;
     wz = null; justSaved = true;
+    // the poles leave the pile on screen right away; if the sheet says no, they come back
+    var early = [], run0 = runOf(keep.pile);
+    if (run0) {
+      keep.sel.forEach(function(l){ if (!run0.gone.has(l)) { run0.gone.add(l); early.push(l); } });
+      run0.poles.forEach(function(p){ p.gone = run0.gone.has(p.label); });
+      layout(false);
+    }
     request(req, true).then(function(res){
       if (res && res.id) { addMine(res.id); renderW(); renderHistory(); if (photo) uploadPhoto(res.id, photo.file, true); }
       frame(null); toast("บันทึกแล้ว เบิก " + n + " ต้น ให้ " + wbs + " ถ้าเบิกผิด ยกเลิกเองได้ภายใน 10 นาที");
@@ -2529,8 +2567,13 @@ details.edit .fields{margin-top:6px}
       justSaved = false; wz = keep;
       var run = runOf(wz.pile);
       if (!run) { wz = null; renderW(); toast(e.message); return; }
+      if (run === run0 && early.length) {                     // put back the poles that were taken off the screen early
+        early.forEach(function(l){ run.gone.delete(l); });
+        run.poles.forEach(function(p){ p.gone = run.gone.has(p.label); });
+        layout(false);
+      }
       wz.sel.forEach(function(l){ if (run.gone.has(l)) wz.sel.delete(l); });
-      paint(); renderW(); err(e.message);
+      paint(); renderW(); err(e.message); toast(e.message);
     });
   }
 
@@ -3644,7 +3687,8 @@ details.edit .fields{margin-top:6px}
     $("splash").classList.remove("err"); $("splashRetry").hidden = true;
     $("splashText").textContent = "กำลังโหลดข้อมูลกองเสา"; armSlow(); reload();
   });
-  armSlow(); reload();
+  if (loadSnap()) hideSplash(); else armSlow();
+  reload();
   // pick up other people's withdrawals and new WBS uploads
   setInterval(function(){ if (!document.hidden) reload(); }, 20000);
   document.addEventListener("visibilitychange", function(){ if (!document.hidden) reload(); });

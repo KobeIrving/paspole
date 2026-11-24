@@ -1,6 +1,7 @@
 /* กองเสา 3D — service worker
- * The app page is fetched fresh whenever there is a connection, so a new index.html on GitHub shows up
- * on the next open. Versioned libraries and icons are kept on the phone so the app opens fast.
+ * The app opens from the copy kept on the phone; a new index.html on GitHub is fetched in the background,
+ * offered as a reload while the app is open, and used on the next open anyway. Versioned libraries and icons
+ * are kept on the phone too.
  * Data from Google Sheet is never cached here: it always comes live from the script. */
 var CACHE = "pole-pile-v1";
 var SHELL = ["./", "./index.html", "./manifest.webmanifest", "./icons/icon-192.png", "./icons/icon-512.png", "./icons/apple-touch-icon.png"];
@@ -19,12 +20,24 @@ self.addEventListener("fetch", function (e) {
   if (req.method !== "GET") return;                                  // writes to the sheet go straight out
   var url = new URL(req.url);
   if (url.origin === self.location.origin) {
-    // own files: network first, fall back to the copy on the phone when offline
-    e.respondWith(fetch(req).then(function (res) {
-      if (res.ok) { var copy = res.clone(); caches.open(CACHE).then(function (c) { c.put(req, copy); }); }
-      return res;
-    }).catch(function () {
-      return caches.match(req).then(function (hit) { return hit || caches.match("./index.html"); });
+    // own files: the copy on the phone first, so the app opens at once even on a weak signal; the newest file is
+    // fetched behind it and kept for next time. If the page itself changed, the open app is told (it offers a reload).
+    var page = req.mode === "navigate" || /\/(index\.html)?$/.test(url.pathname);
+    var net = fetch(req).then(function (res) {
+      if (!res.ok) return res;
+      var copy = res.clone(), body = res.clone();
+      return caches.open(CACHE).then(function (c) {
+        return c.match(req, { ignoreSearch: page }).then(function (old) {
+          var check = old && page ? Promise.all([old.text(), body.text()]).then(function (t) { return t[0] !== t[1]; }) : Promise.resolve(false);
+          return check.then(function (changed) {
+            return c.put(page ? "./index.html" : req, copy).then(function () { if (changed) tell(); });
+          });
+        });
+      }).catch(function () {}).then(function () { return res; });
+    });
+    e.waitUntil(net.catch(function () {}));
+    e.respondWith(caches.match(page ? "./index.html" : req).then(function (hit) {
+      return hit || net.catch(function () { return caches.match("./index.html"); });
     }));
     return;
   }
@@ -39,3 +52,7 @@ self.addEventListener("fetch", function (e) {
   }
   // anything else (Google Apps Script, Gemini) is left alone
 });
+
+function tell() {
+  self.clients.matchAll({ type: "window" }).then(function (cs) { cs.forEach(function (c) { c.postMessage({ type: "updated" }); }); });
+}
