@@ -1163,25 +1163,45 @@ details.edit .fields{margin-top:6px}
     t.anisotropy = 4;
     return t;
   }
-  function signTexture(text){
-    var c = document.createElement("canvas"); c.width = 512; c.height = 112;
-    var g = c.getContext("2d");
+  // the sign over each pile: its name in white, and under it how many poles are still in it in green
+  // (two lines keep the sign as narrow as before, so neighbouring piles' signs do not run into each other)
+  function signTexture(text, left){
+    var two = left != null, c = document.createElement("canvas"); c.width = 512; c.height = two ? 176 : 112;
+    var g = c.getContext("2d"), H = c.height;
     g.font = "700 52px 'Chakra Petch','IBM Plex Sans Thai', Arial, sans-serif";
-    var w = Math.min(500, g.measureText(text).width + 56), x = (512 - w) / 2;
+    var tail = two ? "เหลือ " + left + " ต้น" : "";
+    var w1 = Math.min(460, g.measureText(text).width);
+    g.font = "700 46px 'Chakra Petch','IBM Plex Sans Thai', Arial, sans-serif";
+    var w2 = two ? Math.min(460, g.measureText(tail).width) : 0;
+    var w = Math.min(500, Math.max(w1, w2) + 56), x = (512 - w) / 2;
     g.fillStyle = "rgba(29,35,39,.88)";
     g.beginPath();
-    g.moveTo(x + 20, 8); g.arcTo(x + w, 8, x + w, 104, 20); g.arcTo(x + w, 104, x, 104, 20);
-    g.arcTo(x, 104, x, 8, 20); g.arcTo(x, 8, x + w, 8, 20); g.fill();
-    g.fillStyle = "#ffffff"; g.textAlign = "center"; g.textBaseline = "middle";
-    g.fillText(text, 256, 60, 460);
+    g.moveTo(x + 20, 8); g.arcTo(x + w, 8, x + w, H - 8, 20); g.arcTo(x + w, H - 8, x, H - 8, 20);
+    g.arcTo(x, H - 8, x, 8, 20); g.arcTo(x, 8, x + w, 8, 20); g.fill();
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.font = "700 52px 'Chakra Petch','IBM Plex Sans Thai', Arial, sans-serif";
+    g.fillStyle = "#ffffff"; g.fillText(text, 256, two ? 58 : 60, 460);
+    if (two) {
+      g.font = "700 46px 'Chakra Petch','IBM Plex Sans Thai', Arial, sans-serif";
+      g.fillStyle = left > 0 ? "#5ee38a" : "#f2a65a";                 // green; orange once the pile is empty
+      g.fillText(tail, 256, 124, 460);
+    }
     return new THREE.CanvasTexture(c);
+  }
+  function updateSign(run, force){
+    if (!run.sign) return;
+    var text = run.name + batchSuffix(run.batch, run.name), left = leftIn(run), key = text + "|" + left;
+    if (!force && run.signKey === key) return;
+    run.signKey = key;
+    if (run.sign.material.map) run.sign.material.map.dispose();
+    run.sign.material.map = signTexture(text, left); run.sign.material.needsUpdate = true;
   }
   function clearScene(){
     if (!three) return;
     runs.forEach(function(run){
       run.poles.forEach(function(p){ p.mats.forEach(function(m){ if (m.map) m.map.dispose(); m.dispose(); }); });
       run.battens.forEach(function(b){ b.mesh.geometry.dispose(); });
-      if (run.sign) { run.sign.material.map.dispose(); run.sign.material.dispose(); }
+      if (run.sign) { if (run.sign.material.map) run.sign.material.map.dispose(); run.sign.material.dispose(); }
       if (run.root) run.root.traverse(function(o){ if (o.isMesh && o.geometry && o.geometry !== run.geo) o.geometry.dispose(); });   // plates, battens, broken bits
       if (run.geo) run.geo.dispose();
       if (run.root) three.yard.remove(run.root);
@@ -1229,9 +1249,9 @@ details.edit .fields{margin-top:6px}
             run.battens.push({ mesh: m, layer: layer });
           });
         });
-        var sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: signTexture(run.name + batchSuffix(run.batch, run.name)), depthTest: false }));
-        sign.scale.set(2.6, 0.57, 1);
-        sign.position.set(0, run.height + 0.55, len / 2);
+        var sign = new THREE.Sprite(new THREE.SpriteMaterial({ map: null, depthTest: false }));
+        sign.scale.set(2.6, 0.89, 1);
+        sign.position.set(0, run.height + 0.71, len / 2);
         sign.renderOrder = 10;
         run.root.add(sign);
         run.sign = sign;
@@ -1331,6 +1351,7 @@ details.edit .fields{margin-top:6px}
         }
       });
       run.battens.forEach(function(b){ b.mesh.visible = !!used[b.layer]; });
+      updateSign(run);                           // the count on the sign follows withdrawals, undos and refreshes
     });
   }
   function applyAlpha(p){
@@ -3667,7 +3688,7 @@ details.edit .fields{margin-top:6px}
     if (document.fonts && document.fonts.load) {
       document.fonts.load("700 78px 'Chakra Petch'").then(function(){
         poles.forEach(function(p){ if (p.mats[1]) { p.mats[1].map.dispose(); p.mats[1].map = labelTexture(p.label, p.run.batch); p.mats[1].needsUpdate = true; } });
-        runs.forEach(function(run){ if (run.sign) { run.sign.material.map.dispose(); run.sign.material.map = signTexture(run.name + batchSuffix(run.batch, run.name)); run.sign.material.needsUpdate = true; } });
+        runs.forEach(function(run){ updateSign(run, true); });
       }).catch(function(){});
     }
     tick();
