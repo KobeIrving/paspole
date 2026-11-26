@@ -136,6 +136,7 @@ button.sendbtn{border-color:#2e7d32;color:#2e7d32;font-weight:600}
 .pein.gone{text-decoration:line-through;color:var(--muted,#888);background:var(--bg)}
 .pein.changed{border-color:var(--accent);background:var(--accent-soft);text-decoration:none;color:var(--ink);font-weight:600}
 .peempty{min-height:30px}
+.dash td .formall{display:block;margin-top:6px;white-space:nowrap}
 .appupdate{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom));z-index:60;font:inherit;font-size:14px;font-weight:600;padding:10px 16px;border-radius:999px;border:0;background:var(--accent);color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer}
 .peold{font-size:13px;text-align:center;padding:6px 2px;border-radius:6px;background:var(--bg);color:var(--muted,#888);border:1px solid var(--line)}
 .peadd{font:inherit;font-size:18px;line-height:1;padding:4px 2px;border:1.5px dashed var(--accent);border-radius:6px;background:transparent;color:var(--accent);cursor:pointer;min-height:30px}
@@ -2005,7 +2006,8 @@ details.edit .fields{margin-top:6px}
   // what to write on one form: the poles of every withdrawal that belongs to it, per material row
   function formPlan(form, log, demand, forms){
     var id = formId(form), mats = formMats(form);
-    var es = log.filter(function(e){ var f = formForEntry(e, forms); return f && formId(f) === id; }).sort(function(a, b){ return a.ts - b.ts; });
+    var es = (form.only ? form.only.slice()                 // a combined print from the summary: exactly these withdrawals
+      : log.filter(function(e){ var f = formForEntry(e, forms); return f && formId(f) === id; })).sort(function(a, b){ return a.ts - b.ts; });
     var lines = demand.filter(function(l){ return l.wbs === form.wbs && mats.indexOf(l.mat) >= 0; });
     function pick(f){ for (var i = es.length - 1; i >= 0; i--) if (es[i][f]) return es[i][f]; for (i = 0; i < lines.length; i++) if (lines[i][f]) return lines[i][f]; return ""; }
     var rows = ((form.layout || {}).rows || []).map(function(r){
@@ -2013,7 +2015,7 @@ details.edit .fields{margin-top:6px}
       return { mat: r.mat, y: r.y, labels: labels };
     });
     var from = dayStart(form.date);                // same job, from this print on, but no form has a row for that pole type
-    var stray = log.filter(function(e){ return e.wbs === form.wbs && e.ts >= from && !formForEntry(e, forms); }).length;
+    var stray = form.only ? 0 : log.filter(function(e){ return e.wbs === form.wbs && e.ts >= from && !formForEntry(e, forms); }).length;
     return { booking: pick("booking"), contractor: pick("contractor"), rows: rows, stray: stray,
              total: rows.reduce(function(n, r){ return n + r.labels.length; }, 0) };
   }
@@ -2142,7 +2144,22 @@ details.edit .fields{margin-top:6px}
     setTimeout(function(){ URL.revokeObjectURL(url); }, 60000);
   }
   function formName(f){ return formMats(f).map(function(m){ return shortType(types[m] || m); }).join(" + "); }
-  function formFile(f){ return "ใบเบิก_" + f.wbs + (formsOf(f.wbs).length > 1 ? "_" + formName(f).replace(/\s+/g, "") : "") + "_" + new Date().toLocaleString("sv-SE").slice(0, 10) + ".pdf"; }
+  function formFile(f){ return "ใบเบิก_" + f.wbs + (formsOf(f.wbs).length > 1 ? "_" + formName(f).replace(/\s+/g, "") : "") + (f.only ? "_รวม" : "") + "_" + new Date().toLocaleString("sv-SE").slice(0, 10) + ".pdf"; }
+  // Summary row (one job, one pole type, every trip in the dates shown): one form with all of it added up.
+  // Uses the newest blank form of the job that has a row for that pole type; other pole types on the same form
+  // are filled from their own rows in the summary, so nothing on the page is left out.
+  function combinedForm(g, rows){
+    if (!g.wbs) return null;
+    var best = null;
+    formsOf(g.wbs).forEach(function(f){
+      if (formMats(f).indexOf(g.mat) < 0) return;
+      if (!best || dayStart(f.date) > dayStart(best.date) || (dayStart(f.date) === dayStart(best.date) && (f.ts || 0) >= (best.ts || 0))) best = f;
+    });
+    if (!best) return null;
+    var mats = formMats(best), only = [];
+    rows.forEach(function(r){ if (r.wbs === g.wbs && mats.indexOf(r.mat) >= 0) only = only.concat(r.entries); });
+    return Object.assign({}, best, { only: only });
+  }
   function makeForm(f, auto){
     if (!f) return Promise.resolve(false);
     var plan = planOf(f);
@@ -3398,12 +3415,13 @@ details.edit .fields{margin-top:6px}
       var k = e.wbs ? e.wbs + "|" + e.mat : "EMG|" + e.id, g = groups[k];   // every emergency is its own row
       if (!g) {
         g = groups[k] = { gid: k, kind: kind, note: e.note || "", nets: [], wbs: e.wbs, job: e.job, mat: e.mat, desc: String(e.desc || "").replace(/\s+/g, " ").trim(), n: 0, labels: [],
-                          contractors: [], bookings: [], last: 0, keys: [], trips: [] };
+                          contractors: [], bookings: [], last: 0, keys: [], trips: [], entries: [] };
         rows.push(g);
       }
       g.n += e.labels.length;
       if (e.net && g.nets.indexOf(e.net) < 0) g.nets.push(e.net);
       g.trips.push({ ts: e.ts, labels: e.labels, user: e.user, pile: e.pile, booking: e.booking, photo: e.photo || "" });
+      g.entries.push(e);
       g.labels = g.labels.concat(e.labels);
       if (e.contractor && g.contractors.indexOf(e.contractor) < 0) g.contractors.push(e.contractor);
       if (e.booking && g.bookings.indexOf(e.booking) < 0) g.bookings.push(e.booking);
@@ -3472,7 +3490,18 @@ details.edit .fields{margin-top:6px}
       td(null, shortType(g.desc), g.mat);
       td("num", g.n);
       td("num", g.trips.length);
-      td("labels", g.labels.join(", "));
+      var lc = td("labels", g.labels.join(", ")), cf = combinedForm(g, s.rows);
+      if (cf) {
+        var tot = cf.only.reduce(function(n, e){ return n + e.labels.length; }, 0);
+        var pb = el("button", "small formall", "ใบเบิก PDF รวม " + tot + " ต้น"); pb.type = "button";
+        pb.title = "ใบเบิกใบเดียว ยอดและเลขเสาเป็นยอดรวมทุกรอบในช่วงวันที่ที่เลือก";
+        (function(cf, pb){ pb.addEventListener("click", function(ev){
+          ev.stopPropagation();
+          if (canSign()) { openSigner([cf], state.log, formFile(cf)); return; }
+          pb.disabled = true; makeForm(cf).then(function(){ pb.disabled = false; });
+        }); })(cf, pb);
+        lc.appendChild(pb);
+      }
       td(null, g.contractors.join(", ") || "-", g.bookings.join(", "));
       td("num", g.left == null ? "-" : g.left);
       function toggle(){ dashOpen[gk] = !dashOpen[gk]; renderDash(); }
