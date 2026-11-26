@@ -136,6 +136,12 @@ button.sendbtn{border-color:#2e7d32;color:#2e7d32;font-weight:600}
 .pein.gone{text-decoration:line-through;color:var(--muted,#888);background:var(--bg)}
 .pein.changed{border-color:var(--accent);background:var(--accent-soft);text-decoration:none;color:var(--ink);font-weight:600}
 .peempty{min-height:30px}
+.pilecard .card-head{cursor:pointer;align-items:center}
+.pilecard .card-head:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+.pilecard .chev{color:var(--muted);font-size:14px;margin-left:4px}
+.pilecard.open{border-color:var(--accent)}
+.piledetail{display:flex;flex-direction:column;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.pilephoto{display:block;width:100%;max-width:520px;max-height:360px;object-fit:cover;border-radius:8px;background:var(--bg)}
 .dash td .formall{display:block;margin-top:6px;white-space:nowrap}
 .appupdate{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(14px + env(safe-area-inset-bottom));z-index:60;font:inherit;font-size:14px;font-weight:600;padding:10px 16px;border-radius:999px;border:0;background:var(--accent);color:#fff;box-shadow:0 4px 14px rgba(0,0,0,.25);cursor:pointer}
 .peold{font-size:13px;text-align:center;padding:6px 2px;border-radius:6px;background:var(--bg);color:var(--muted,#888);border:1px solid var(--line)}
@@ -706,6 +712,12 @@ details.edit .fields{margin-top:6px}
           if (Date.now() - pe.ts > PHOTO_MS) fail("เกิน 30 นาทีแล้ว ให้ผู้ดูแลแนบรูปให้");
         }
         pe.photo = "data:" + req.mime + ";base64," + req.data;      // trial mode keeps the picture in this browser
+      } else if (a === "setPilePhoto") {
+        admin();
+        var pp = db.piles.filter(function(x){ return x.name === req.pile; })[0];
+        if (!pp) fail("ไม่พบกอง " + req.pile);
+        pp.photo = "data:" + req.mime + ";base64," + req.data;      // trial mode keeps the picture in this browser
+        pp.photoAt = new Date().toLocaleString("sv-SE").slice(0, 16);
       } else if (a === "setSent") {
         var se = db.log.filter(function(x){ return x.id === req.id; })[0];
         if (!se) fail("ไม่พบรายการนี้ อาจถูกยกเลิกไปแล้ว");
@@ -881,7 +893,7 @@ details.edit .fields{margin-top:6px}
 
   // every server answer carries the whole state; show it
   var BUSY_TEXT = { withdraw: "กำลังบันทึกการเบิก", undo: "กำลังยกเลิกรายการ", undoPoles: "กำลังยกเลิกเสา", upload: "กำลังอัปข้อมูล WBS",
-    addPile: "กำลังสร้างกองเสา", addPoles: "กำลังเพิ่มเสา", renamePoles: "กำลังบันทึกเลขเสา", deletePile: "กำลังลบกอง", mergePiles: "กำลังรวมกอง", setPositions: "กำลังบันทึกตำแหน่งกอง",
+    addPile: "กำลังสร้างกองเสา", addPoles: "กำลังเพิ่มเสา", setPilePhoto: "กำลังส่งรูปกอง", renamePoles: "กำลังบันทึกเลขเสา", deletePile: "กำลังลบกอง", mergePiles: "กำลังรวมกอง", setPositions: "กำลังบันทึกตำแหน่งกอง",
     setOrder: "กำลังบันทึกเลขที่ใบสั่ง", setSent: "กำลังบันทึกสถานะส่งคลัง", addPhoto: "กำลังส่งรูป", uploadForms: "กำลังอัปใบเบิกเปล่า", registerForms: "กำลังบันทึกใบเบิกเปล่า", addSigner: "กำลังเพิ่มลายเซ็น", deleteSigner: "กำลังลบลายเซ็น", listFolderForms: "กำลังดูไฟล์ในโฟลเดอร์ไดรฟ์", deleteForm: "กำลังลบใบเบิกเปล่า", getForm: "กำลังเตรียมใบเบิก", checkAdmin: "กำลังตรวจรหัสผู้ดูแล" };
   // a small spinning pill while something the user pressed is on its way; the 20-second refresh stays silent
   var busyCount = 0;
@@ -1648,12 +1660,21 @@ details.edit .fields{margin-top:6px}
       });
       if (!state.demand.length) box.appendChild(el("p", "status err", "ยังไม่มีข้อมูล WBS ให้ผู้ดูแลอัปไฟล์ผลลัพธ์ zcn52n ในแท็บ ผู้ดูแล"));
       else box.appendChild(el("p", "note", "ข้อมูล WBS: " + state.importInfo));
-      runs.forEach(function(run){
-        var c = el("div", "card"), h = el("div", "card-head");
+      runs.forEach(function(run, i){
+        var open = !!pileOpen[run.name], c = el("div", "card pilecard" + (open ? " open" : "")), h = el("div", "card-head");
+        h.setAttribute("role", "button"); h.tabIndex = 0; h.setAttribute("aria-expanded", open ? "true" : "false");
+        h.title = open ? "ซ่อนรายละเอียดกอง" : "ดูรูปกองและรายละเอียด";
         h.appendChild(el("h2", null, run.name));
         var cnt = el("span", "count"); cnt.appendChild(document.createTextNode("คงเหลือ ")); cnt.appendChild(el("b", null, leftIn(run))); cnt.appendChild(document.createTextNode(" / " + run.poles.length + " ต้น"));
-        h.appendChild(cnt); c.appendChild(h);
-        var r = el("div", "row-actions"); r.appendChild(el("span", "pill type", typeDesc(run.mat))); r.appendChild(batchPill(run.batch)); c.appendChild(r);
+        h.appendChild(cnt); h.appendChild(el("span", "chev", open ? "▾" : "▸")); c.appendChild(h);
+        var r = el("div", "row-actions"); r.appendChild(el("span", "pill type", typeDesc(run.mat))); r.appendChild(batchPill(run.batch));
+        var d0 = state.piles[i] || {};
+        if (d0.photo && !open) r.appendChild(el("span", "pill", "มีรูปกอง"));
+        c.appendChild(r);
+        function flip(){ pileOpen[run.name] = !pileOpen[run.name]; renderW(); }
+        h.addEventListener("click", flip);
+        h.addEventListener("keydown", function(ev){ if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); flip(); } });
+        if (open) c.appendChild(pileDetail(run, d0));
         box.appendChild(c);
       });
       if (!runs.length) box.appendChild(el("p", "empty", "ยังไม่มีกองเสา ให้ผู้ดูแลเพิ่มกองในแท็บ ผู้ดูแล"));
@@ -1885,6 +1906,31 @@ details.edit .fields{margin-top:6px}
 
   /* ---------- one optional photo per withdrawal ---------- */
   function photoSrc(p){ return p.indexOf("data:") === 0 ? p : "https://drive.google.com/thumbnail?id=" + encodeURIComponent(p) + "&sz=w800"; }
+  /* tap a pile on the start screen: its current photo for everyone, a new one from the admin */
+  var pileOpen = {};
+  function pileDetail(run, d){
+    var box = el("div", "piledetail");
+    if (d.photo) {
+      var a = document.createElement("a"); a.href = photoLink(d.photo); a.target = "_blank"; a.rel = "noopener"; a.title = "เปิดรูปเต็ม";
+      var im = document.createElement("img"); im.className = "pilephoto"; im.loading = "lazy"; im.src = photoSrc(d.photo); im.alt = "รูปกอง " + run.name;
+      im.onerror = function(){ a.textContent = "เปิดรูปกอง"; };
+      a.appendChild(im); box.appendChild(a);
+      box.appendChild(el("p", "note", "รูปเมื่อ " + (d.photoAt || "-") + " · แตะรูปเพื่อดูเต็ม"));
+    } else box.appendChild(el("p", "note", "ยังไม่มีรูปกองนี้"));
+    var acts = el("div", "row-actions");
+    if (three) {
+      var look = el("button", "small", "ดูกองในภาพ 3D"); look.type = "button";
+      look.addEventListener("click", function(){ frameFace(run); $("stage").scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" }); });
+      acts.appendChild(look);
+    }
+    if ($("inAdmin").value) acts.appendChild(fileButton(d.photo ? "อัปรูปปัจจุบันใหม่" : "อัปรูปปัจจุบัน", function(f){
+      shrink(f, 1600, 0.85).then(function(img){
+        return request({ action: "setPilePhoto", pile: run.name, admin: $("inAdmin").value, user: lsGet("pole-user"), mime: img.mime, data: img.data }, true);
+      }).then(function(){ toast("อัปรูปกอง " + run.name + " แล้ว"); renderW(); }, function(e){ toast("ส่งรูปไม่สำเร็จ: " + (e && e.message || "")); });
+    }));
+    box.appendChild(acts);
+    return box;
+  }
   function photoLink(p){ return p.indexOf("data:") === 0 ? p : "https://drive.google.com/file/d/" + encodeURIComponent(p) + "/view"; }
   function fileButton(text, onFile){
     var lab = el("label", "filebtn small", text), inp = document.createElement("input");
