@@ -1726,8 +1726,16 @@ details.edit .fields{margin-top:6px}
       else {
         var sel = document.createElement("select"); sel.id = "selWbs";
         var o0 = el("option", null, "เลือก WBS (" + lines.length + " รายการ)"); o0.value = ""; sel.appendChild(o0);
-        lines.forEach(function(l){
-          var o = el("option", null, l.wbs + " · เหลือ " + l.left + " ต้น · " + (l.job || "")); o.value = l.key; sel.appendChild(o);
+        // grouped by contractor, so someone sent by PG finds PG's jobs without knowing the WBS;
+        // the contractor goes first in each line because iPhone cuts long options off at the end
+        var NOC = "ไม่ระบุผู้รับเหมา", byC = {};
+        lines.forEach(function(l){ var c = String(l.contractor || "").trim() || NOC; (byC[c] = byC[c] || []).push(l); });
+        Object.keys(byC).sort(function(a, b){ return a === NOC ? 1 : b === NOC ? -1 : a.localeCompare(b, "th"); }).forEach(function(c){
+          var grp = document.createElement("optgroup"); grp.label = c + " (" + byC[c].length + ")";
+          byC[c].forEach(function(l){
+            var o = el("option", null, (c === NOC ? "" : c + " · ") + l.wbs + " · เหลือ " + l.left + " ต้น · " + (l.job || "")); o.value = l.key; grp.appendChild(o);
+          });
+          sel.appendChild(grp);
         });
         sel.value = line ? wz.key : "";
         sel.addEventListener("change", function(){
