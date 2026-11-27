@@ -1671,7 +1671,11 @@ details.edit .fields{margin-top:6px}
         var d0 = state.piles[i] || {};
         if (d0.photo && !open) r.appendChild(el("span", "pill", "มีรูปกอง"));
         c.appendChild(r);
-        function flip(){ pileOpen[run.name] = !pileOpen[run.name]; renderW(); }
+        function flip(){
+          pileOpen[run.name] = !pileOpen[run.name];
+          if (pileOpen[run.name]) frameFace(run);       // opening a pile turns the 3D camera to face it
+          renderW();
+        }
         h.addEventListener("click", flip);
         h.addEventListener("keydown", function(ev){ if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); flip(); } });
         if (open) c.appendChild(pileDetail(run, d0));
@@ -1912,6 +1916,7 @@ details.edit .fields{margin-top:6px}
     var box = el("div", "piledetail");
     if (d.photo) {
       var a = document.createElement("a"); a.href = photoLink(d.photo); a.target = "_blank"; a.rel = "noopener"; a.title = "เปิดรูปเต็ม";
+      a.addEventListener("click", function(){ frameFace(run); });
       var im = document.createElement("img"); im.className = "pilephoto"; im.loading = "lazy"; im.src = photoSrc(d.photo); im.alt = "รูปกอง " + run.name;
       im.onerror = function(){ a.textContent = "เปิดรูปกอง"; };
       a.appendChild(im); box.appendChild(a);
